@@ -1,0 +1,23 @@
+---
+- name: OpenSearch Installation/Uninstallation Playbook
+  hosts: lemp_servers
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    opensearch_action: "{{ action | default('install') }}"
+  
+  roles:
+    - role: opensearch
+      when: opensearch_action in ['install', 'uninstall']
+  
+  post_tasks:
+    - name: Display installation status
+      debug:
+        msg: "OpenSearch {{ opensearch_version }} installation completed successfully"
+      when: opensearch_action == 'install'
+    
+    - name: Display uninstallation status
+      debug:
+        msg: "OpenSearch {{ opensearch_version }} uninstallation completed successfully"
+      when: opensearch_action == 'uninstall'

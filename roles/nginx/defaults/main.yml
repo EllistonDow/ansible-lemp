@@ -1,0 +1,10 @@
+---
+nginx_version: "1.27.4"
+nginx_user: "www-data"
+nginx_group: "www-data"
+nginx_worker_processes: "auto"
+nginx_worker_connections: 1024
+nginx_keepalive_timeout: 65
+nginx_client_max_body_size: "64m"
+nginx_server_tokens: "off"
+modsecurity_enabled: true

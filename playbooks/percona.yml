@@ -1,0 +1,23 @@
+---
+- name: Percona MySQL Installation/Uninstallation Playbook
+  hosts: lemp_servers
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    percona_action: "{{ action | default('install') }}"
+  
+  roles:
+    - role: percona
+      when: percona_action in ['install', 'uninstall']
+  
+  post_tasks:
+    - name: Display installation status
+      debug:
+        msg: "Percona Server for MySQL {{ percona_version }} installation completed successfully"
+      when: percona_action == 'install'
+    
+    - name: Display uninstallation status
+      debug:
+        msg: "Percona Server for MySQL {{ percona_version }} uninstallation completed successfully"
+      when: percona_action == 'uninstall'

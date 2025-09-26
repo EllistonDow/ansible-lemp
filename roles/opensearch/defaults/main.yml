@@ -1,0 +1,21 @@
+---
+# OpenSearch defaults
+opensearch_version: "2.19.0"
+opensearch_user: "opensearch"
+opensearch_group: "opensearch"
+opensearch_home: "/opt/opensearch"
+opensearch_data_dir: "/var/lib/opensearch"
+opensearch_log_dir: "/var/log/opensearch"
+opensearch_config_dir: "/etc/opensearch"
+
+# Network settings
+opensearch_network_host: "0.0.0.0"
+opensearch_http_port: 9200
+opensearch_transport_port: 9300
+
+# Memory settings
+opensearch_heap_size: "1g"
+
+# Security settings
+opensearch_security_enabled: true
+opensearch_admin_password: "admin"

@@ -1,0 +1,63 @@
+---
+# Global variables for LEMP stack
+timezone: "America/Los_Angeles"
+locale: "en_US.UTF-8"
+
+# System settings
+system:
+  os: "ubuntu"
+  version: "24.04"
+  architecture: "x86_64"
+
+# Software versions
+versions:
+  composer: "2.8"
+  opensearch: "2.19"
+  percona: "8.4"
+  php: "8.3"
+  rabbitmq: "4.1"
+  valkey: "8"
+  varnish: "7.6"
+  nginx: "1.27.4"
+
+# PHP extensions
+php_extensions:
+  - php-bcmath
+  - php-ctype
+  - php-curl
+  - php-dom
+  - php-fileinfo
+  - php-filter
+  - php-ftp
+  - php-gd
+  - php-hash
+  - php-iconv
+  - php-intl
+  - php-json
+  - php-libxml
+  - php-mbstring
+  - php-openssl
+  - php-pcre
+  - php-pdo-mysql
+  - php-simplexml
+  - php-soap
+  - php-sockets
+  - php-sodium
+  - php-tokenizer
+  - php-xmlwriter
+  - php-xsl
+  - php-zip
+  - php-zlib
+
+# Security settings
+security:
+  fail2ban_enabled: true
+  firewall_enabled: true
+  ssl_enabled: true
+
+# Database settings
+database:
+  percona_root_password: "{{ percona_root_password | default('SecurePassword123!') }}"
+
+# ModSecurity settings
+modsecurity_enabled: true

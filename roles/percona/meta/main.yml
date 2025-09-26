@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  author: LEMP Stack Installer
+  description: Install and configure Percona Server for MySQL 8.4
+  license: MIT
+  min_ansible_version: 2.9
+  platforms:
+    - name: Ubuntu
+      versions:
+        - "24.04"
+  galaxy_tags:
+    - mysql
+    - percona
+    - database
+    - lemp
+
+dependencies: []

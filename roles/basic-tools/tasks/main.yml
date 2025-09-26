@@ -1,0 +1,24 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install Composer
+  include_tasks: composer.yml
+
+- name: Install Fail2ban
+  include_tasks: fail2ban.yml
+  when: fail2ban_enabled | bool
+
+- name: Install Webmin
+  include_tasks: webmin.yml
+  when: webmin_enabled | bool
+
+- name: Install phpMyAdmin
+  include_tasks: phpmyadmin.yml
+  when: phpmyadmin_enabled | bool
+
+- name: Install Certbot
+  include_tasks: certbot.yml
+  when: certbot_enabled | bool

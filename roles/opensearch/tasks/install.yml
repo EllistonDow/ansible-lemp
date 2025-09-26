@@ -1,0 +1,137 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install Java 11 (required for OpenSearch)
+  apt:
+    name: openjdk-11-jdk
+    state: present
+
+- name: Create opensearch group
+  group:
+    name: "{{ opensearch_group }}"
+    system: yes
+
+- name: Create opensearch user
+  user:
+    name: "{{ opensearch_user }}"
+    group: "{{ opensearch_group }}"
+    system: yes
+    home: "{{ opensearch_home }}"
+    shell: /bin/bash
+    create_home: no
+
+- name: Create opensearch directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ opensearch_user }}"
+    group: "{{ opensearch_group }}"
+    mode: '0755'
+  loop:
+    - "{{ opensearch_home }}"
+    - "{{ opensearch_data_dir }}"
+    - "{{ opensearch_log_dir }}"
+    - "{{ opensearch_config_dir }}"
+
+- name: Download OpenSearch
+  get_url:
+    url: "https://artifacts.opensearch.org/releases/bundle/opensearch/{{ opensearch_version }}/opensearch-{{ opensearch_version }}-linux-x64.tar.gz"
+    dest: "/tmp/opensearch-{{ opensearch_version }}-linux-x64.tar.gz"
+    timeout: 300
+
+- name: Extract OpenSearch
+  unarchive:
+    src: "/tmp/opensearch-{{ opensearch_version }}-linux-x64.tar.gz"
+    dest: "{{ opensearch_home }}"
+    remote_src: yes
+    owner: "{{ opensearch_user }}"
+    group: "{{ opensearch_group }}"
+    extra_opts: [--strip-components=1]
+    creates: "{{ opensearch_home }}/bin/opensearch"
+
+- name: Set opensearch home ownership
+  file:
+    path: "{{ opensearch_home }}"
+    owner: "{{ opensearch_user }}"
+    group: "{{ opensearch_group }}"
+    recurse: yes
+
+- name: Create opensearch configuration
+  template:
+    src: opensearch.yml.j2
+    dest: "{{ opensearch_config_dir }}/opensearch.yml"
+    owner: "{{ opensearch_user }}"
+    group: "{{ opensearch_group }}"
+    mode: '0644'
+  notify: restart opensearch
+
+- name: Create opensearch JVM options
+  template:
+    src: jvm.options.j2
+    dest: "{{ opensearch_config_dir }}/jvm.options"
+    owner: "{{ opensearch_user }}"
+    group: "{{ opensearch_group }}"
+    mode: '0644'
+  notify: restart opensearch
+
+- name: Create opensearch log4j2 configuration
+  template:
+    src: log4j2.properties.j2
+    dest: "{{ opensearch_config_dir }}/log4j2.properties"
+    owner: "{{ opensearch_user }}"
+    group: "{{ opensearch_group }}"
+    mode: '0644'
+  notify: restart opensearch
+
+- name: Create opensearch systemd service
+  template:
+    src: opensearch.service.j2
+    dest: /etc/systemd/system/opensearch.service
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart opensearch
+
+- name: Set system limits for opensearch
+  blockinfile:
+    path: /etc/security/limits.conf
+    block: |
+      {{ opensearch_user }} soft nofile 65536
+      {{ opensearch_user }} hard nofile 65536
+      {{ opensearch_user }} soft memlock unlimited
+      {{ opensearch_user }} hard memlock unlimited
+
+- name: Set vm.max_map_count
+  sysctl:
+    name: vm.max_map_count
+    value: '262144'
+    state: present
+    sysctl_set: yes
+
+- name: Start and enable opensearch service
+  systemd:
+    name: opensearch
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Wait for OpenSearch to be ready
+  uri:
+    url: "http://localhost:{{ opensearch_http_port }}"
+    method: GET
+    user: admin
+    password: "{{ opensearch_admin_password }}"
+    force_basic_auth: yes
+    status_code: 200
+  register: opensearch_status
+  until: opensearch_status.status == 200
+  retries: 30
+  delay: 10
+
+- name: Clean up downloaded tar file
+  file:
+    path: "/tmp/opensearch-{{ opensearch_version }}-linux-x64.tar.gz"
+    state: absent

@@ -1,0 +1,197 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install required packages
+  apt:
+    name:
+      - wget
+      - lsb-release
+      - gnupg2
+      - curl
+    state: present
+
+- name: Download Percona repository package
+  get_url:
+    url: "https://repo.percona.com/apt/percona-release_latest.generic_all.deb"
+    dest: "/tmp/percona-release_latest.generic_all.deb"
+
+- name: Install Percona repository package
+  apt:
+    deb: "/tmp/percona-release_latest.generic_all.deb"
+    state: present
+
+- name: Update repository information
+  apt:
+    update_cache: yes
+
+- name: Enable Percona Server for MySQL 8.4 repository
+  command: percona-release enable-only ps-84-lts release
+  changed_when: false
+
+- name: Update apt cache after enabling repository
+  apt:
+    update_cache: yes
+
+- name: Set MySQL root password before installation (Ubuntu 22.04 and earlier)
+  debconf:
+    name: percona-server-server
+    question: "{{ item }}"
+    value: "{{ percona_root_password }}"
+    vtype: password
+  loop:
+    - "percona-server-server/root_password"
+    - "percona-server-server/root_password_again"
+  no_log: true
+  when: ansible_distribution_major_version | int < 24
+
+- name: Pre-configure MySQL for Ubuntu 24.04+
+  shell: |
+    export DEBIAN_FRONTEND=noninteractive
+    echo "percona-server-server percona-server-server/root_password password {{ percona_root_password }}" | debconf-set-selections
+    echo "percona-server-server percona-server-server/root_password_again password {{ percona_root_password }}" | debconf-set-selections
+  no_log: true
+  when: ansible_distribution_major_version | int >= 24
+
+- name: Install Percona Server for MySQL
+  apt:
+    name:
+      - percona-server-server
+      - percona-server-client
+      - percona-server-common
+      - percona-toolkit
+      - python3-pymysql
+    state: present
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Create mysql configuration directory
+  file:
+    path: /etc/mysql/mysql.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Configure MySQL
+  template:
+    src: my.cnf.j2
+    dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart mysql
+
+- name: Create MySQL log directory
+  file:
+    path: "{{ mysql_logdir }}"
+    state: directory
+    owner: "{{ percona_user }}"
+    group: "{{ percona_group }}"
+    mode: '0755'
+
+- name: Configure MySQL environment variables (fix MYSQLD_OPTS warning)
+  lineinfile:
+    path: /etc/default/mysql
+    line: "{{ item }}"
+    create: yes
+    state: present
+  loop:
+    - "# MySQL daemon options (prevent systemd warning)"
+    - 'MYSQLD_OPTS=""'
+
+- name: Create systemd drop-in directory for MySQL
+  file:
+    path: /etc/systemd/system/mysql.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create systemd drop-in configuration to fix MYSQLD_OPTS warning
+  copy:
+    dest: /etc/systemd/system/mysql.service.d/override.conf
+    content: |
+      [Service]
+      Environment="MYSQLD_OPTS="
+    owner: root
+    group: root
+    mode: '0644'
+  notify: 
+    - reload systemd
+    - restart mysql
+
+- name: Start and enable MySQL service
+  systemd:
+    name: mysql
+    state: started
+    enabled: yes
+
+- name: Check if MySQL root user has a password
+  shell: mysql -u root -e "SELECT 1" 2>/dev/null
+  register: mysql_root_access
+  ignore_errors: yes
+  changed_when: false
+
+- name: Set MySQL root password using mysql command (Ubuntu 24.04+)
+  shell: |
+    sudo mysql -u root <<EOF
+    ALTER USER 'root'@'localhost' IDENTIFIED WITH caching_sha2_password BY '{{ percona_root_password }}';
+    FLUSH PRIVILEGES;
+    EOF
+  when: mysql_root_access.rc == 0
+  no_log: true
+
+- name: Set MySQL root password using mysql_user module (if password access works)
+  mysql_user:
+    name: root
+    password: "{{ percona_root_password }}"
+    login_user: root
+    login_password: "{{ percona_root_password }}"
+    priv: "*.*:ALL,GRANT"
+    host: "{{ item }}"
+  loop:
+    - "127.0.0.1"
+    - "::1"
+    - "localhost"
+  when: mysql_root_access.rc != 0
+  ignore_errors: yes
+  no_log: true
+
+- name: Wait for MySQL to be ready with new password
+  wait_for:
+    timeout: 30
+  when: mysql_root_access.rc == 0
+
+- name: Remove anonymous users
+  mysql_user:
+    name: ""
+    host_all: yes
+    state: absent
+    login_user: root
+    login_password: "{{ percona_root_password }}"
+  ignore_errors: yes
+
+- name: Remove test database
+  mysql_db:
+    name: test
+    state: absent
+    login_user: root
+    login_password: "{{ percona_root_password }}"
+  ignore_errors: yes
+
+- name: Clean up downloaded repository package
+  file:
+    path: "/tmp/percona-release_latest.generic_all.deb"
+    state: absent
+
+- name: Display MySQL version
+  command: mysql --version
+  register: mysql_version_output
+  changed_when: false
+
+- name: Show MySQL version
+  debug:
+    msg: "{{ mysql_version_output.stdout }}"

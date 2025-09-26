@@ -1,0 +1,19 @@
+cluster.name: opensearch-cluster
+node.name: "{{ ansible_hostname }}"
+
+path.data: {{ opensearch_data_dir }}
+path.logs: {{ opensearch_log_dir }}
+
+network.host: {{ opensearch_network_host }}
+http.port: {{ opensearch_http_port }}
+transport.port: {{ opensearch_transport_port }}
+
+discovery.type: single-node
+
+bootstrap.memory_lock: true
+
+# Disable security plugin for simple setup
+plugins.security.disabled: true
+
+# Basic OpenSearch configuration without security
+action.auto_create_index: true

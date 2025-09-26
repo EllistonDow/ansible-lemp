@@ -1,0 +1,93 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Check if Ubuntu has PHP 8.3 in official repos
+  shell: apt-cache policy php8.3
+  register: php_availability
+  failed_when: false
+  changed_when: false
+
+- name: Install required packages for adding repository
+  apt:
+    name:
+      - software-properties-common
+      - ca-certificates
+      - lsb-release
+      - apt-transport-https
+    state: present
+  when: "'8.3' not in php_availability.stdout"
+
+- name: Add Ondrej PHP repository GPG key
+  get_url:
+    url: https://packages.sury.org/php/apt.gpg
+    dest: /etc/apt/keyrings/php.gpg
+    mode: '0644'
+  when: "'8.3' not in php_availability.stdout"
+
+- name: Add Ondrej PHP repository
+  apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/php.gpg] https://packages.sury.org/php/ {{ ansible_distribution_release }} main"
+    state: present
+    update_cache: yes
+  when: "'8.3' not in php_availability.stdout"
+
+- name: Install PHP {{ php_version }} and modules
+  apt:
+    name: "{{ php_modules }}"
+    state: present
+    update_cache: yes
+
+- name: Create PHP-FPM configuration
+  template:
+    src: www.conf.j2
+    dest: "/etc/php/{{ php_version }}/fpm/pool.d/www.conf"
+    owner: root
+    group: root
+    mode: '0644'
+    backup: yes
+  notify: restart php-fpm
+
+- name: Configure PHP settings
+  template:
+    src: php.ini.j2
+    dest: "/etc/php/{{ php_version }}/fpm/php.ini"
+    owner: root
+    group: root
+    mode: '0644'
+    backup: yes
+  notify: restart php-fpm
+
+- name: Configure CLI PHP settings
+  template:
+    src: php.ini.j2
+    dest: "/etc/php/{{ php_version }}/cli/php.ini"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Start and enable PHP-FPM service
+  systemd:
+    name: "php{{ php_version }}-fpm"
+    state: started
+    enabled: yes
+
+- name: Check PHP version
+  command: "php{{ php_version }} --version"
+  register: php_version_output
+  changed_when: false
+
+- name: Display PHP version
+  debug:
+    msg: "{{ php_version_output.stdout_lines[0] }}"
+
+- name: Check PHP-FPM status
+  systemd:
+    name: "php{{ php_version }}-fpm"
+  register: php_fpm_status
+
+- name: Display PHP-FPM status
+  debug:
+    msg: "PHP-FPM service is {{ php_fpm_status.status.ActiveState }}"

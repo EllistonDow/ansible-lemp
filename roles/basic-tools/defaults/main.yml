@@ -1,0 +1,12 @@
+---
+# Basic tools versions
+composer_version: "2.8"
+fail2ban_enabled: true
+webmin_enabled: true
+phpmyadmin_enabled: true
+certbot_enabled: true
+
+# Security settings
+fail2ban_bantime: 3600
+fail2ban_findtime: 600
+fail2ban_maxretry: 5

@@ -1,0 +1,92 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+
+- name: Install build dependencies
+  apt:
+    name:
+      - build-essential
+      - wget
+      - tar
+    state: present
+
+- name: Create valkey group
+  group:
+    name: "{{ valkey_group }}"
+    system: yes
+
+- name: Create valkey user
+  user:
+    name: "{{ valkey_user }}"
+    group: "{{ valkey_group }}"
+    system: yes
+    home: "{{ valkey_dir }}"
+    shell: /bin/false
+
+- name: Create directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ valkey_user }}"
+    group: "{{ valkey_group }}"
+    mode: '0755'
+  loop:
+    - "{{ valkey_dir }}"
+    - "{{ valkey_config_dir }}"
+    - "{{ valkey_log_dir }}"
+    - "/opt/valkey"
+
+- name: Install Redis (Valkey compatible)
+  apt:
+    name: redis-server
+    state: present
+    update_cache: yes
+
+- name: Stop and disable Redis
+  systemd:
+    name: redis-server
+    state: stopped
+    enabled: no
+
+- name: Create symbolic links for Valkey binaries
+  file:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    state: link
+    force: yes
+  loop:
+    - { src: "/usr/bin/redis-server", dest: "/usr/local/bin/valkey-server" }
+    - { src: "/usr/bin/redis-cli", dest: "/usr/local/bin/valkey-cli" }
+
+- name: Create Valkey configuration
+  copy:
+    src: /etc/redis/redis.conf
+    dest: /etc/valkey/valkey.conf
+    remote_src: yes
+    owner: "{{ valkey_user }}"
+    group: "{{ valkey_group }}"
+    mode: '0640'
+
+- name: Update Valkey configuration
+  replace:
+    path: /etc/valkey/valkey.conf
+    regexp: "{{ item.regexp }}"
+    replace: "{{ item.replace }}"
+  loop:
+    - { regexp: '^dir /var/lib/redis', replace: 'dir {{ valkey_dir }}' }
+    - { regexp: '^logfile /var/log/redis/redis-server.log', replace: 'logfile {{ valkey_log_dir }}/valkey.log' }
+    - { regexp: '^pidfile /run/redis/redis-server.pid', replace: 'pidfile /run/valkey/valkey.pid' }
+
+- name: Create Valkey systemd service
+  template:
+    src: valkey.service.j2
+    dest: /etc/systemd/system/valkey.service
+    mode: '0644'
+
+- name: Start and enable Valkey
+  systemd:
+    name: valkey
+    state: started
+    enabled: yes
+    daemon_reload: yes

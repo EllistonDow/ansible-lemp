@@ -1,0 +1,29 @@
+---
+- name: Install required packages for Webmin
+  apt:
+    name:
+      - wget
+      - apt-transport-https
+    state: present
+
+- name: Download and install Webmin directly
+  get_url:
+    url: "http://prdownloads.sourceforge.net/webadmin/webmin_{{ webmin_version | default('2.200') }}_all.deb"
+    dest: "/tmp/webmin_{{ webmin_version | default('2.200') }}_all.deb"
+  register: webmin_download
+
+- name: Install Webmin from deb package
+  apt:
+    deb: "/tmp/webmin_{{ webmin_version | default('2.200') }}_all.deb"
+    state: present
+    
+- name: Clean up Webmin installer
+  file:
+    path: "/tmp/webmin_{{ webmin_version | default('2.200') }}_all.deb"
+    state: absent
+
+- name: Start and enable Webmin
+  systemd:
+    name: webmin
+    state: started
+    enabled: yes

@@ -1,0 +1,8 @@
+---
+- name: Include install tasks
+  include_tasks: install.yml
+  when: percona_action is not defined or percona_action == "install"
+
+- name: Include uninstall tasks
+  include_tasks: uninstall.yml
+  when: percona_action is defined and percona_action == "uninstall"

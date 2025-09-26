@@ -1,0 +1,44 @@
+---
+# PHP defaults
+php_version: "8.3"
+php_fpm_user: "www-data"
+php_fpm_group: "www-data"
+
+# PHP-FPM settings
+php_fpm_listen: "/run/php/php8.3-fpm.sock"
+php_fpm_listen_owner: "www-data"
+php_fpm_listen_group: "www-data"
+php_fpm_listen_mode: "0666"
+
+# PHP pool settings
+php_fpm_pm: "dynamic"
+php_fpm_pm_max_children: 5
+php_fpm_pm_start_servers: 2
+php_fpm_pm_min_spare_servers: 1
+php_fpm_pm_max_spare_servers: 3
+
+# PHP configuration
+php_memory_limit: "128M"
+php_max_execution_time: 30
+php_max_input_time: 60
+php_post_max_size: "8M"
+php_upload_max_filesize: "2M"
+php_max_file_uploads: 20
+
+# PHP modules to install
+php_modules:
+  - php8.3-bcmath
+  - php8.3-curl
+  - php8.3-dom
+  - php8.3-fpm
+  - php8.3-gd
+  - php8.3-intl
+  - php8.3-mbstring
+  - php8.3-mysql
+  - php8.3-soap
+  - php8.3-xml
+  - php8.3-zip
+  - php8.3-cli
+  - php8.3-common
+  - php8.3-fpm
+  - php8.3-opcache

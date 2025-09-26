@@ -1,0 +1,65 @@
+[client]
+port = {{ mysql_port }}
+socket = {{ mysql_socket }}
+
+[mysqld_safe]
+socket = {{ mysql_socket }}
+nice = 0
+
+[mysqld]
+# Basic Settings
+user = {{ percona_user }}
+pid-file = /var/run/mysqld/mysqld.pid
+socket = {{ mysql_socket }}
+port = {{ mysql_port }}
+basedir = /usr
+datadir = {{ mysql_datadir }}
+tmpdir = {{ mysql_tmpdir }}
+lc-messages-dir = /usr/share/mysql
+skip-external-locking
+
+# Fine Tuning
+key_buffer_size = 16M
+max_allowed_packet = 16M
+thread_stack = 192K
+thread_cache_size = {{ mysql_thread_cache_size }}
+max_connections = {{ mysql_max_connections }}
+table_open_cache = 64
+
+# Query Cache Configuration (Removed in MySQL 8.0)
+# query_cache_limit = 1M
+# query_cache_size = {{ mysql_query_cache_size }}
+
+# Logging and Replication
+log_error = {{ mysql_logdir }}/error.log
+general_log_file = {{ mysql_logdir }}/mysql.log
+general_log = 0
+slow_query_log = 1
+slow_query_log_file = {{ mysql_logdir }}/mysql-slow.log
+long_query_time = 2
+
+# InnoDB Settings
+default_storage_engine = InnoDB
+innodb_buffer_pool_size = {{ mysql_innodb_buffer_pool_size }}
+innodb_log_file_size = {{ mysql_innodb_log_file_size }}
+innodb_lock_wait_timeout = 50
+innodb_file_per_table = 1
+
+# Security Settings
+bind-address = {{ mysql_bind_address }}
+sql_mode = {{ mysql_sql_mode }}
+
+# Character Set
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+[mysqldump]
+quick
+quote-names
+max_allowed_packet = 16M
+
+[mysql]
+default-character-set = utf8mb4
+
+[isamchk]
+key_buffer_size = 16M

@@ -1,0 +1,41 @@
+---
+- name: Stop PHP-FPM service
+  systemd:
+    name: "php{{ php_version }}-fpm"
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Remove PHP packages
+  apt:
+    name: "{{ php_modules }}"
+    state: absent
+    purge: yes
+
+- name: Remove PHP configuration directories
+  file:
+    path: "/etc/php/{{ php_version }}"
+    state: absent
+
+- name: Remove PHP log files
+  file:
+    path: "/var/log/php{{ php_version }}-fpm.log"
+    state: absent
+
+- name: Remove Ondrej PHP repository
+  apt_repository:
+    repo: "deb https://packages.sury.org/php/ {{ ansible_distribution_release }} main"
+    state: absent
+
+- name: Remove Ondrej PHP repository GPG key
+  apt_key:
+    url: https://packages.sury.org/php/apt.gpg
+    state: absent
+
+- name: Update apt cache after removal
+  apt:
+    update_cache: yes
+
+- name: Display uninstall completion message
+  debug:
+    msg: "PHP {{ php_version }} has been successfully uninstalled"

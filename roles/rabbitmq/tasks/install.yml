@@ -1,0 +1,43 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+
+- name: Install required packages
+  apt:
+    name:
+      - curl
+      - gnupg
+      - apt-transport-https
+    state: present
+
+- name: Check if Ubuntu has RabbitMQ in official repos
+  shell: apt-cache policy rabbitmq-server
+  register: rabbitmq_availability
+  failed_when: false
+  changed_when: false
+
+- name: Install RabbitMQ server
+  apt:
+    name: rabbitmq-server
+    state: present
+    update_cache: yes
+
+- name: Enable RabbitMQ management plugin
+  rabbitmq_plugin:
+    names: rabbitmq_management
+    state: enabled
+
+- name: Start and enable RabbitMQ service
+  systemd:
+    name: rabbitmq-server
+    state: started
+    enabled: yes
+
+- name: Create RabbitMQ admin user
+  rabbitmq_user:
+    user: "{{ rabbitmq_admin_user }}"
+    password: "{{ rabbitmq_admin_password }}"
+    tags: administrator
+    state: present
+  no_log: true

@@ -1,0 +1,200 @@
+# Ansible LEMP Stack v1.0.0
+
+A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
+
+## 🎯 Overview
+
+This Ansible project provides a fully automated installation and configuration of a modern LEMP (Linux, Nginx, MySQL, PHP) stack with additional tools for development and production environments.
+
+### 🚀 Key Features
+
+- **One-command deployment** - Complete LEMP stack in minutes
+- **Production-ready** - Optimized configurations for real-world use
+- **Security-first** - ModSecurity WAF, SSL/TLS, fail2ban protection
+- **Modular design** - Install components individually or all at once
+- **Modern versions** - Latest stable versions of all components
+
+## 📋 Components
+
+| Component | Version | Individual Playbook |
+|-----------|---------|-------------------|
+| Ansible | Latest | - |
+| Composer | 2.8 | ✅ |
+| OpenSearch | 2.19 | ✅ |
+| Percona MySQL | 8.4 | ✅ |
+| PHP | 8.3 | ✅ |
+| RabbitMQ | 4.1 | ✅ |
+| Valkey | 8 | ✅ |
+| Varnish | 7.6 | ✅ |
+| Nginx | 1.27.4 + ModSecurity | ✅ |
+| Fail2ban | Latest | - |
+| Webmin | Latest | - |
+| phpMyAdmin | Latest | - |
+| Certbot | Latest | - |
+
+## 🛡️ Security Features
+
+- **ModSecurity WAF** - Web Application Firewall with OWASP Core Rule Set
+- **SSL/TLS Support** - Ready for HTTPS with Certbot integration
+- **Fail2ban** - Intrusion prevention system
+- **Secure MySQL** - Hardened database configuration
+- **Access Control** - Restricted service bindings and user permissions
+
+## ⚡ Performance Optimizations
+
+- **Nginx Tuning** - Worker processes and connection optimizations
+- **PHP-FPM** - Optimized process management
+- **MySQL Optimization** - InnoDB buffer pool and query optimization
+- **Caching** - Multiple caching layers (Varnish, Redis-compatible Valkey)
+
+## 📖 Quick Start
+
+### Prerequisites
+
+- Ubuntu 24.04 LTS
+- SSH access with sudo privileges
+- Python 3 and pip installed
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/dogedix/ansible-lemp.git
+   cd ansible-lemp
+   ```
+
+2. **Install Ansible** (if not already installed)
+   ```bash
+   ./install.sh
+   ```
+
+3. **Deploy the complete stack**
+   ```bash
+   ansible-playbook playbooks/site.yml
+   ```
+
+4. **Check installation status**
+   ```bash
+   ./lemp-check.sh
+   ```
+
+## 🔧 Individual Component Installation
+
+Install specific components using individual playbooks:
+
+```bash
+# Database
+ansible-playbook playbooks/percona.yml
+
+# Search Engine
+ansible-playbook playbooks/opensearch.yml
+
+# Message Queue
+ansible-playbook playbooks/rabbitmq.yml
+
+# Cache Store
+ansible-playbook playbooks/valkey.yml
+
+# HTTP Cache
+ansible-playbook playbooks/varnish.yml
+
+# Management Tools
+ansible-playbook playbooks/basic-tools.yml --tags "webmin"
+ansible-playbook playbooks/basic-tools.yml --tags "phpmyadmin"
+ansible-playbook playbooks/basic-tools.yml --tags "certbot"
+```
+
+## 📊 System Monitoring
+
+Use the built-in monitoring script to check system status:
+
+```bash
+# Check all components
+./lemp-check.sh
+
+# Check versions only
+./lemp-check.sh v
+
+# Check service status only
+./lemp-check.sh s
+```
+
+## 🌐 Access Points
+
+After installation, access your services at:
+
+- **Main Website**: http://localhost
+- **phpMyAdmin**: http://localhost/phpmyadmin
+- **Webmin**: https://localhost:10000
+- **OpenSearch**: http://localhost:9200
+- **RabbitMQ Management**: http://localhost:15672
+
+## 📚 Documentation
+
+- [Installation Guide](INSTALLATION_GUIDE.md) - Detailed installation instructions
+- [Deployment Guide](DEPLOYMENT_GUIDE.md) - Ansible vs Shell scripts comparison
+- [System Check Usage](LEMP_CHECK_USAGE.md) - Monitoring tool documentation
+- [MySQL Fixes Changelog](MYSQL_FIXES_CHANGELOG.md) - Recent improvements
+
+## 🔒 Default Credentials
+
+- **MySQL root password**: `SecurePassword123!`
+- **Webmin**: Use system root credentials
+
+> ⚠️ **Important**: Change default passwords in production environments!
+
+## 🏗️ Architecture
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│     Nginx       │    │    Varnish      │    │   Fail2ban      │
+│  (Web Server)   │    │  (HTTP Cache)   │    │  (Security)     │
+│  + ModSecurity  │    │                 │    │                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+         ┌───────────────────────┼───────────────────────┐
+         │                       │                       │
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│      PHP        │    │  Percona MySQL  │    │     Valkey      │
+│   (Backend)     │    │   (Database)    │    │    (Cache)      │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   OpenSearch    │    │    RabbitMQ     │    │    Webmin       │
+│   (Search)      │    │   (Queue)       │    │  (Management)   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Support
+
+- Check the [documentation](docs/) for common issues
+- Open an [issue](https://github.com/dogedix/ansible-lemp/issues) for bug reports
+- Star the repository if it helps you! ⭐
+
+## 🔄 Version History
+
+- **v1.0.0** - Initial release with full LEMP stack automation
+  - Complete Ansible automation
+  - ModSecurity integration
+  - Production-ready configurations
+  - Comprehensive monitoring tools
+
+---
+
+**Built with ❤️ for the community**

@@ -1,0 +1,23 @@
+---
+- name: PHP Installation/Uninstallation Playbook
+  hosts: lemp_servers
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    php_action: "{{ action | default('install') }}"
+  
+  roles:
+    - role: php
+      when: php_action in ['install', 'uninstall']
+  
+  post_tasks:
+    - name: Display installation status
+      debug:
+        msg: "PHP {{ php_version }} installation completed successfully"
+      when: php_action == 'install'
+    
+    - name: Display uninstallation status
+      debug:
+        msg: "PHP {{ php_version }} uninstallation completed successfully"
+      when: php_action == 'uninstall'

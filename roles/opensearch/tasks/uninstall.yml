@@ -1,0 +1,49 @@
+---
+- name: Stop opensearch service
+  systemd:
+    name: opensearch
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Remove opensearch systemd service
+  file:
+    path: /etc/systemd/system/opensearch.service
+    state: absent
+  notify: reload systemd
+
+- name: Remove opensearch directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ opensearch_home }}"
+    - "{{ opensearch_data_dir }}"
+    - "{{ opensearch_log_dir }}"
+    - "{{ opensearch_config_dir }}"
+
+- name: Remove opensearch user
+  user:
+    name: "{{ opensearch_user }}"
+    state: absent
+    remove: yes
+
+- name: Remove opensearch group
+  group:
+    name: "{{ opensearch_group }}"
+    state: absent
+
+- name: Remove opensearch limits configuration
+  lineinfile:
+    path: /etc/security/limits.conf
+    regexp: "^{{ opensearch_user }}.*"
+    state: absent
+
+- name: Remove downloaded files
+  file:
+    path: "/tmp/opensearch-{{ opensearch_version }}-linux-x64.tar.gz"
+    state: absent
+
+- name: Display uninstall completion message
+  debug:
+    msg: "OpenSearch {{ opensearch_version }} has been successfully uninstalled"

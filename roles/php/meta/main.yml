@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  author: LEMP Stack Installer
+  description: Install and configure PHP 8.3 with required extensions
+  license: MIT
+  min_ansible_version: 2.9
+  platforms:
+    - name: Ubuntu
+      versions:
+        - "24.04"
+  galaxy_tags:
+    - php
+    - php-fpm
+    - web
+    - lemp
+
+dependencies: []

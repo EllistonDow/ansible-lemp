@@ -1,0 +1,26 @@
+---
+- name: Stop nginx service
+  systemd:
+    name: nginx
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Remove nginx packages
+  apt:
+    name:
+      - nginx
+      - libmodsecurity3
+      - modsecurity-crs
+    state: absent
+    purge: yes
+
+- name: Remove nginx configuration
+  file:
+    path: /etc/nginx
+    state: absent
+
+- name: Remove nginx repository
+  apt_repository:
+    repo: "deb https://nginx.org/packages/ubuntu {{ ansible_distribution_release }} nginx"
+    state: absent

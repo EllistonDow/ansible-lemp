@@ -1,0 +1,36 @@
+[www]
+user = {{ php_fpm_user }}
+group = {{ php_fpm_group }}
+
+listen = {{ php_fpm_listen }}
+listen.owner = {{ php_fpm_listen_owner }}
+listen.group = {{ php_fpm_listen_group }}
+listen.mode = {{ php_fpm_listen_mode }}
+
+pm = {{ php_fpm_pm }}
+pm.max_children = {{ php_fpm_pm_max_children }}
+pm.start_servers = {{ php_fpm_pm_start_servers }}
+pm.min_spare_servers = {{ php_fpm_pm_min_spare_servers }}
+pm.max_spare_servers = {{ php_fpm_pm_max_spare_servers }}
+
+; Make sure the FPM workers can reach the session save path
+; php_admin_value[session.save_path] = /var/lib/php/sessions
+
+; The URI which should be protected from unauthorized access
+; php_admin_value[cgi.fix_pathinfo] = 0
+
+pm.process_idle_timeout = 10s
+pm.max_requests = 500
+
+; Make sure PHP-FPM can write error logs
+php_admin_value[error_log] = /var/log/php8.3-fpm.log
+php_admin_flag[log_errors] = on
+
+; Set session path to a directory owned by process user
+php_value[session.save_handler] = files
+php_value[session.save_path]    = /var/lib/php/sessions
+php_value[soap.wsdl_cache_dir]  = /var/lib/php/wsdlcache
+
+; Security settings
+php_admin_value[disable_functions] = exec,passthru,shell_exec,system,proc_open,popen
+php_admin_value[expose_php] = off

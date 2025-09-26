@@ -1,0 +1,8 @@
+---
+- name: Include install tasks
+  include_tasks: install.yml
+  when: rabbitmq_action is not defined or rabbitmq_action == "install"
+
+- name: Include uninstall tasks
+  include_tasks: uninstall.yml
+  when: rabbitmq_action is defined and rabbitmq_action == "uninstall"

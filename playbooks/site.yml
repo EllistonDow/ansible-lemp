@@ -1,0 +1,84 @@
+---
+- name: Complete LEMP Stack Installation
+  hosts: lemp_servers
+  become: yes
+  gather_facts: yes
+  
+  pre_tasks:
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+        cache_valid_time: 3600
+    
+    - name: Set timezone
+      timezone:
+        name: "{{ timezone }}"
+      when: timezone is defined
+    
+    - name: Set locale
+      locale_gen:
+        name: "{{ locale }}"
+        state: present
+      when: locale is defined
+
+  roles:
+    - role: nginx
+      when: install_nginx | default(true) | bool
+    
+    - role: php
+      when: install_php | default(true) | bool
+    
+    - role: percona
+      when: install_percona | default(true) | bool
+    
+    - role: opensearch
+      when: install_opensearch | default(true) | bool
+    
+    - role: rabbitmq
+      when: install_rabbitmq | default(true) | bool
+    
+    - role: valkey
+      when: install_valkey | default(true) | bool
+    
+    - role: varnish
+      when: install_varnish | default(true) | bool
+    
+    - role: basic-tools
+      when: install_basic_tools | default(true) | bool
+
+  post_tasks:
+    - name: Display installation summary
+      debug:
+        msg: |
+          LEMP Stack Installation Complete!
+          
+          Installed Components:
+          - Nginx {{ nginx_version if install_nginx | default(true) else 'Skipped' }}
+          - PHP {{ php_version if install_php | default(true) else 'Skipped' }}
+          - Percona MySQL {{ percona_version if install_percona | default(true) else 'Skipped' }}
+          - OpenSearch {{ opensearch_version if install_opensearch | default(true) else 'Skipped' }}
+          - RabbitMQ {{ rabbitmq_version if install_rabbitmq | default(true) else 'Skipped' }}
+          - Valkey {{ valkey_version if install_valkey | default(true) else 'Skipped' }}
+          - Varnish {{ varnish_version if install_varnish | default(true) else 'Skipped' }}
+          - Basic Tools {{ 'Installed' if install_basic_tools | default(true) else 'Skipped' }}
+    
+    - name: Display service status
+      systemd:
+        name: "{{ item }}"
+      register: service_status
+      loop:
+        - nginx
+        - php8.3-fpm
+        - mysql
+        - opensearch
+        - rabbitmq-server
+        - valkey
+        - varnish
+      failed_when: false
+    
+    - name: Show running services
+      debug:
+        msg: "{{ item.item }} is {{ item.status.ActiveState }}"
+      loop: "{{ service_status.results }}"
+      when: item.status is defined

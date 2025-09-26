@@ -1,0 +1,9 @@
+---
+valkey_version: "8"
+valkey_port: 6379
+valkey_bind: "127.0.0.1"
+valkey_user: "valkey"
+valkey_group: "valkey"
+valkey_dir: "/var/lib/valkey"
+valkey_config_dir: "/etc/valkey"
+valkey_log_dir: "/var/log/valkey"

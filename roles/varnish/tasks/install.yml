@@ -1,0 +1,37 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+
+- name: Install curl
+  apt:
+    name: curl
+    state: present
+
+- name: Add Varnish repository key
+  apt_key:
+    url: https://packagecloud.io/varnishcache/varnish76/gpgkey
+    state: present
+
+- name: Add Varnish repository
+  apt_repository:
+    repo: "deb https://packagecloud.io/varnishcache/varnish76/ubuntu/ {{ ansible_distribution_release }} main"
+    state: present
+
+- name: Install Varnish
+  apt:
+    name: varnish
+    state: present
+    update_cache: yes
+
+- name: Configure Varnish
+  template:
+    src: default.vcl.j2
+    dest: /etc/varnish/default.vcl
+    backup: yes
+
+- name: Start and enable Varnish
+  systemd:
+    name: varnish
+    state: started
+    enabled: yes

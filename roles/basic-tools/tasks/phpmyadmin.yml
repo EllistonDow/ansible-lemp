@@ -1,0 +1,17 @@
+---
+- name: Install phpMyAdmin
+  apt:
+    name: phpmyadmin
+    state: present
+
+- name: Create phpMyAdmin nginx configuration
+  template:
+    src: phpmyadmin.conf.j2
+    dest: /etc/nginx/sites-available/phpmyadmin.conf
+    
+- name: Enable phpMyAdmin site
+  file:
+    src: /etc/nginx/sites-available/phpmyadmin.conf
+    dest: /etc/nginx/sites-enabled/phpmyadmin.conf
+    state: link
+  notify: restart nginx

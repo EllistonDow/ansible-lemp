@@ -1,0 +1,18 @@
+---
+- name: Stop Varnish service
+  systemd:
+    name: varnish
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Remove Varnish packages
+  apt:
+    name: varnish
+    state: absent
+    purge: yes
+
+- name: Remove Varnish configuration
+  file:
+    path: /etc/varnish
+    state: absent

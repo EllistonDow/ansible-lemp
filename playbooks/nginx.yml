@@ -1,0 +1,12 @@
+---
+- name: Nginx Installation/Uninstallation Playbook
+  hosts: lemp_servers
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    nginx_action: "{{ action | default('install') }}"
+  
+  roles:
+    - role: nginx
+      when: nginx_action in ['install', 'uninstall']

@@ -1,0 +1,100 @@
+# Ansible
+*.retry
+.vault_pass
+.vault_password
+vault_pass.txt
+vault_password.txt
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# SSH keys
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# SSL certificates (unless needed for demo)
+*.crt
+*.cert
+*.cer
+*.p12
+*.pfx
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Local configuration overrides
+local_settings.yml
+local_vars.yml
+secrets.yml
+passwords.yml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Test results
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation builds
+docs/_build/
+
+# MySQL dumps
+*.sql
+*.dump

@@ -1,0 +1,13 @@
+---
+- name: Basic Tools Installation Playbook
+  hosts: lemp_servers
+  become: yes
+  gather_facts: yes
+  
+  roles:
+    - role: basic-tools
+  
+  post_tasks:
+    - name: Display installation status
+      debug:
+        msg: "Basic tools installation completed successfully"

@@ -1,0 +1,8 @@
+---
+- name: Include install tasks
+  include_tasks: install.yml
+  when: varnish_action is not defined or varnish_action == "install"
+
+- name: Include uninstall tasks
+  include_tasks: uninstall.yml
+  when: varnish_action is defined and varnish_action == "uninstall"

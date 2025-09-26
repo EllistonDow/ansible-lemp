@@ -1,0 +1,28 @@
+---
+- name: Stop Valkey service
+  systemd:
+    name: valkey
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Remove Valkey systemd service
+  file:
+    path: /etc/systemd/system/valkey.service
+    state: absent
+
+- name: Remove Valkey directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ valkey_dir }}"
+    - "{{ valkey_config_dir }}"
+    - "{{ valkey_log_dir }}"
+    - "/opt/valkey-{{ valkey_version }}.0"
+
+- name: Remove Valkey user
+  user:
+    name: "{{ valkey_user }}"
+    state: absent
+    remove: yes

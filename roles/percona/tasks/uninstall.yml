@@ -1,0 +1,60 @@
+---
+- name: Stop MySQL service
+  systemd:
+    name: mysql
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Remove Percona Server packages
+  apt:
+    name:
+      - percona-server-server
+      - percona-server-client
+      - percona-server-common
+      - percona-toolkit
+      - percona-release
+    state: absent
+    purge: yes
+
+- name: Remove MySQL configuration files
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/etc/mysql"
+    - "/var/lib/mysql"
+    - "/var/log/mysql"
+    - "/etc/apparmor.d/usr.sbin.mysqld"
+
+- name: Remove MySQL user and group
+  user:
+    name: "{{ percona_user }}"
+    state: absent
+    remove: yes
+
+- name: Remove MySQL group
+  group:
+    name: "{{ percona_group }}"
+    state: absent
+
+- name: Remove Percona repository configuration
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/etc/apt/sources.list.d/percona-*"
+    - "/etc/apt/trusted.gpg.d/percona-*"
+
+- name: Update apt cache after removal
+  apt:
+    update_cache: yes
+
+- name: Clean up downloaded files
+  file:
+    path: "/tmp/percona-release_latest.generic_all.deb"
+    state: absent
+
+- name: Display uninstall completion message
+  debug:
+    msg: "Percona Server for MySQL {{ percona_version }} has been successfully uninstalled"

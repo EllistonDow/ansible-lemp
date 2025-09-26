@@ -1,0 +1,23 @@
+---
+- name: Stop RabbitMQ service
+  systemd:
+    name: rabbitmq-server
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Remove RabbitMQ packages
+  apt:
+    name: rabbitmq-server
+    state: absent
+    purge: yes
+
+- name: Remove RabbitMQ data directory
+  file:
+    path: /var/lib/rabbitmq
+    state: absent
+
+- name: Remove RabbitMQ configuration
+  file:
+    path: /etc/rabbitmq
+    state: absent

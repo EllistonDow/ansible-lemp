@@ -1,0 +1,174 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+
+- name: Install dependencies
+  apt:
+    name:
+      - curl
+      - gnupg2
+      - ca-certificates
+      - lsb-release
+    state: present
+
+- name: Add nginx signing key
+  apt_key:
+    url: https://nginx.org/keys/nginx_signing.key
+    state: present
+
+- name: Add nginx repository
+  apt_repository:
+    repo: "deb https://nginx.org/packages/ubuntu {{ ansible_distribution_release }} nginx"
+    state: present
+
+- name: Install nginx from official repository
+  apt:
+    name: nginx
+    state: present
+    update_cache: yes
+
+- name: Install ModSecurity build dependencies
+  apt:
+    name:
+      - build-essential
+      - libtool
+      - autoconf
+      - git
+      - pkg-config
+      - libpcre3-dev
+      - zlib1g-dev
+      - libssl-dev
+      - libmodsecurity-dev
+      - libmodsecurity3
+      - modsecurity-crs
+    state: present
+  when: modsecurity_enabled | default(false)
+
+- name: Check if ModSecurity nginx module directory exists
+  stat:
+    path: /usr/local/src/ModSecurity-nginx
+  register: modsec_nginx_dir
+  when: modsecurity_enabled | default(false)
+
+- name: Clone ModSecurity nginx connector
+  git:
+    repo: https://github.com/SpiderLabs/ModSecurity-nginx.git
+    dest: /usr/local/src/ModSecurity-nginx
+    depth: 1
+  when: 
+    - modsecurity_enabled | default(false)
+    - not modsec_nginx_dir.stat.exists
+
+- name: Get nginx version and configure parameters
+  shell: nginx -V 2>&1 | grep "configure arguments"
+  register: nginx_configure_args
+  when: modsecurity_enabled | default(false)
+
+- name: Stop nginx for recompilation
+  service:
+    name: nginx
+    state: stopped
+  when: modsecurity_enabled | default(false)
+
+- name: Get nginx source for recompilation
+  shell: |
+    NGINX_VERSION=$(nginx -v 2>&1 | grep -o '[0-9.]*')
+    cd /usr/local/src
+    wget -q http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
+    tar -xzf nginx-${NGINX_VERSION}.tar.gz
+    echo "nginx-${NGINX_VERSION}" > /tmp/nginx_version.txt
+  when: modsecurity_enabled | default(false)
+
+- name: Read nginx version from file
+  slurp:
+    src: /tmp/nginx_version.txt
+  register: nginx_version_file
+  when: modsecurity_enabled | default(false)
+
+- name: Recompile nginx with ModSecurity
+  shell: |
+    NGINX_DIR="{{ nginx_version_file['content'] | b64decode | trim }}"
+    cd "/usr/local/src/${NGINX_DIR}"
+    ./configure {{ nginx_configure_args.stdout.split('configure arguments: ')[1] }} --add-dynamic-module=/usr/local/src/ModSecurity-nginx
+    make modules
+    cp objs/ngx_http_modsecurity_module.so /etc/nginx/modules/
+  when: modsecurity_enabled | default(false)
+
+- name: Create nginx modules directory if not exists
+  file:
+    path: /etc/nginx/modules
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: modsecurity_enabled | default(false)
+
+- name: Create ModSecurity configuration directory
+  file:
+    path: /etc/nginx/modsec
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: modsecurity_enabled | default(false)
+
+- name: Create ModSecurity main configuration
+  copy:
+    dest: /etc/nginx/modsec/main.conf
+    content: |
+      # ModSecurity configuration
+      Include /etc/modsecurity/modsecurity.conf
+      
+      # Include OWASP CRS rules if available
+      Include /etc/modsecurity/rules/*.conf
+    owner: root
+    group: root
+    mode: '0644'
+  when: modsecurity_enabled | default(false)
+
+- name: Create ModSecurity configuration
+  copy:
+    dest: /etc/modsecurity/modsecurity.conf
+    content: |
+      # ModSecurity configuration
+      SecRuleEngine On
+      SecRequestBodyAccess On
+      SecRequestBodyLimit 13107200
+      SecRequestBodyNoFilesLimit 131072
+      SecRequestBodyLimitAction Reject
+      SecResponseBodyAccess On
+      SecResponseBodyMimeType text/plain text/html text/xml
+      SecResponseBodyLimit 524288
+      SecResponseBodyLimitAction ProcessPartial
+      SecTmpDir /tmp/
+      SecDataDir /tmp/
+      SecAuditEngine RelevantOnly
+      SecAuditLogRelevantStatus "^(?:5|4(?!04))"
+      SecAuditLogParts ABIJDEFHZ
+      SecAuditLogType Serial
+      SecAuditLog /var/log/nginx/modsec_audit.log
+    owner: root
+    group: root
+    mode: '0644'
+  when: modsecurity_enabled | default(false)
+
+- name: Setup OWASP CRS rules link
+  file:
+    src: /usr/share/modsecurity-crs/rules
+    dest: /etc/modsecurity/rules
+    state: link
+    force: yes
+  when: modsecurity_enabled | default(false)
+
+- name: Configure nginx
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    backup: yes
+
+- name: Start and enable nginx
+  systemd:
+    name: nginx
+    state: started
+    enabled: yes

@@ -1,0 +1,12 @@
+---
+- name: Valkey Installation/Uninstallation Playbook
+  hosts: lemp_servers
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    valkey_action: "{{ action | default('install') }}"
+  
+  roles:
+    - role: valkey
+      when: valkey_action in ['install', 'uninstall']

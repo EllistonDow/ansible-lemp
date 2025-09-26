@@ -1,0 +1,8 @@
+---
+- name: Include install tasks
+  include_tasks: install.yml
+  when: valkey_action is not defined or valkey_action == "install"
+
+- name: Include uninstall tasks
+  include_tasks: uninstall.yml
+  when: valkey_action is defined and valkey_action == "uninstall"

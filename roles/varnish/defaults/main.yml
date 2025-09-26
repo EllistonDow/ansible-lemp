@@ -1,0 +1,7 @@
+---
+varnish_version: "7.6"
+varnish_listen_port: 80
+varnish_admin_port: 6082
+varnish_backend_host: "127.0.0.1"
+varnish_backend_port: 8080
+varnish_memory: "256m"

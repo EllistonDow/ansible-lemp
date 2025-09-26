@@ -1,0 +1,12 @@
+---
+- name: Varnish Installation/Uninstallation Playbook
+  hosts: lemp_servers
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    varnish_action: "{{ action | default('install') }}"
+  
+  roles:
+    - role: varnish
+      when: varnish_action in ['install', 'uninstall']
