@@ -232,7 +232,7 @@ show_quick_info() {
     echo -e "    • RabbitMQ管理: ${BLUE}http://localhost:15672${NC}"
     echo
     echo -e "  ${ROCKET} ${GREEN}数据库${NC}:"
-    echo -e "    • MySQL: ${BLUE}localhost:3306${NC} (用户: root, 密码: SecurePassword123!)"
+    echo -e "    • MySQL: ${BLUE}localhost:3306${NC} (用户: root, 密码: root_password_change_me)"
     echo -e "    • Valkey: ${BLUE}localhost:6379${NC}"
     echo
 }

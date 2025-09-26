@@ -195,3 +195,13 @@
 - name: Show MySQL version
   debug:
     msg: "{{ mysql_version_output.stdout }}"
+
+- name: Create MySQL root client configuration for easy access
+  template:
+    src: my.cnf.client.j2
+    dest: /root/.my.cnf
+    owner: root
+    group: root
+    mode: '0600'
+  vars:
+    mysql_root_password: "{{ percona_root_password }}"
