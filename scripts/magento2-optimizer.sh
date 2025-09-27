@@ -25,7 +25,8 @@ GEAR="⚙️"
 # 配置文件路径
 MYSQL_CONFIG="/etc/mysql/mysql.conf.d/mysqld.cnf"
 PHP_FPM_CONFIG="/etc/php/8.3/fpm/pool.d/www.conf"
-PHP_INI_CONFIG="/etc/php/8.3/fpm/php.ini"
+PHP_FPM_INI_CONFIG="/etc/php/8.3/fpm/php.ini"
+PHP_CLI_INI_CONFIG="/etc/php/8.3/cli/php.ini"
 NGINX_CONFIG="/etc/nginx/nginx.conf"
 VALKEY_CONFIG="/etc/valkey/valkey.conf"
 OPENSEARCH_CONFIG="/etc/opensearch/opensearch.yml"
@@ -203,7 +204,8 @@ optimize_php_fpm() {
     echo -e "${GEAR} ${CYAN}优化PHP-FPM配置...${NC}"
     
     create_backup "$PHP_FPM_CONFIG" "www.conf"
-    create_backup "$PHP_INI_CONFIG" "php.ini"
+    create_backup "$PHP_FPM_INI_CONFIG" "php-fpm.ini"
+    create_backup "$PHP_CLI_INI_CONFIG" "php-cli.ini"
     
     # 优化PHP-FPM池配置
     sudo sed -i 's/^pm = .*/pm = dynamic/' "$PHP_FPM_CONFIG"
@@ -218,23 +220,40 @@ optimize_php_fpm() {
         echo "pm.process_idle_timeout = 60s" | sudo tee -a "$PHP_FPM_CONFIG" > /dev/null
     fi
     
-    # 优化PHP.ini设置 (Magento2官方建议: 生产环境2GB)
-    sudo sed -i 's/^memory_limit = .*/memory_limit = 2G/' "$PHP_INI_CONFIG"
-    sudo sed -i 's/^max_execution_time = .*/max_execution_time = 1800/' "$PHP_INI_CONFIG"
-    sudo sed -i 's/^max_input_time = .*/max_input_time = 1800/' "$PHP_INI_CONFIG"
-    sudo sed -i 's/^post_max_size = .*/post_max_size = 64M/' "$PHP_INI_CONFIG"
-    sudo sed -i 's/^upload_max_filesize = .*/upload_max_filesize = 64M/' "$PHP_INI_CONFIG"
-    sudo sed -i 's/^max_file_uploads = .*/max_file_uploads = 100/' "$PHP_INI_CONFIG"
+    # 优化PHP-FPM.ini设置 (Magento2官方建议: 生产环境2GB)
+    sudo sed -i 's/^memory_limit = .*/memory_limit = 2G/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^max_execution_time = .*/max_execution_time = 1800/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^max_input_time = .*/max_input_time = 1800/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^post_max_size = .*/post_max_size = 64M/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^upload_max_filesize = .*/upload_max_filesize = 64M/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^max_file_uploads = .*/max_file_uploads = 100/' "$PHP_FPM_INI_CONFIG"
+    
+    # 优化PHP-CLI.ini设置 (Magento2命令行操作需要更多内存)
+    sudo sed -i 's/^memory_limit = .*/memory_limit = 4G/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^max_execution_time = .*/max_execution_time = 3600/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^max_input_time = .*/max_input_time = 3600/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^post_max_size = .*/post_max_size = 64M/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^upload_max_filesize = .*/upload_max_filesize = 64M/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^max_file_uploads = .*/max_file_uploads = 100/' "$PHP_CLI_INI_CONFIG"
     
     # OPcache设置 (对Magento2非常重要)
-    sudo sed -i 's/^;opcache.enable=.*/opcache.enable=1/' "$PHP_INI_CONFIG"
-    sudo sed -i 's/^;opcache.memory_consumption=.*/opcache.memory_consumption=1024/' "$PHP_INI_CONFIG"
-    sudo sed -i 's/^;opcache.interned_strings_buffer=.*/opcache.interned_strings_buffer=64/' "$PHP_INI_CONFIG"
-    sudo sed -i 's/^;opcache.max_accelerated_files=.*/opcache.max_accelerated_files=100000/' "$PHP_INI_CONFIG"
-    sudo sed -i 's/^;opcache.validate_timestamps=.*/opcache.validate_timestamps=0/' "$PHP_INI_CONFIG"
-    sudo sed -i 's/^;opcache.save_comments=.*/opcache.save_comments=1/' "$PHP_INI_CONFIG"
+    sudo sed -i 's/^;opcache.enable=.*/opcache.enable=1/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^;opcache.memory_consumption=.*/opcache.memory_consumption=1024/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^;opcache.interned_strings_buffer=.*/opcache.interned_strings_buffer=64/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^;opcache.max_accelerated_files=.*/opcache.max_accelerated_files=100000/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^;opcache.validate_timestamps=.*/opcache.validate_timestamps=0/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^;opcache.save_comments=.*/opcache.save_comments=1/' "$PHP_FPM_INI_CONFIG"
     
-    echo -e "  ${CHECK_MARK} PHP-FPM配置已优化 (支持高并发Magento2)"
+    # CLI也启用OPcache (命令行操作也能受益)
+    sudo sed -i 's/^;opcache.enable=.*/opcache.enable=1/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^;opcache.enable_cli=.*/opcache.enable_cli=1/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^;opcache.memory_consumption=.*/opcache.memory_consumption=512/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^;opcache.interned_strings_buffer=.*/opcache.interned_strings_buffer=32/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^;opcache.max_accelerated_files=.*/opcache.max_accelerated_files=100000/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^;opcache.validate_timestamps=.*/opcache.validate_timestamps=1/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^;opcache.save_comments=.*/opcache.save_comments=1/' "$PHP_CLI_INI_CONFIG"
+    
+    echo -e "  ${CHECK_MARK} PHP-FPM和PHP-CLI配置已优化 (支持高并发Magento2和命令行操作)"
 }
 
 optimize_nginx() {
@@ -386,12 +405,8 @@ bootstrap.memory_lock: true
 indices.memory.index_buffer_size: 30%
 indices.memory.min_index_buffer_size: 96mb
 
-# Index Settings for Magento2
-index.number_of_shards: 1
-index.number_of_replicas: 0
-index.refresh_interval: 30s
-index.translog.flush_threshold_size: 1gb
-index.translog.sync_interval: 30s
+# Default Index Template Settings (these will be applied to new indices)
+# Note: Index-level settings should be configured via index templates, not in opensearch.yml
 
 # Search Settings
 search.max_buckets: 100000
@@ -402,11 +417,11 @@ indices.breaker.total.limit: 70%
 indices.breaker.fielddata.limit: 40%
 indices.breaker.request.limit: 40%
 
-# Thread Pool Settings
+# Thread Pool Settings (updated for OpenSearch 2.x)
 thread_pool.search.size: 16
 thread_pool.search.queue_size: 1000
-thread_pool.index.size: 8
-thread_pool.index.queue_size: 200
+thread_pool.write.size: 8
+thread_pool.write.queue_size: 200
 
 # Cache Settings
 indices.requests.cache.size: 2%
@@ -448,6 +463,9 @@ EOF
 -XX:+HeapDumpOnOutOfMemoryError
 -XX:HeapDumpPath=/var/lib/opensearch
 
+# JVM temporary directory
+-Djava.io.tmpdir=/tmp
+
 # Performance Settings
 -Djava.awt.headless=true
 -Dfile.encoding=UTF-8
@@ -460,9 +478,11 @@ EOF
 -Dlog4j.shutdownHookEnabled=false
 -Dlog4j2.disable.jmx=true
 
-# Security Settings
--Djava.security.policy=all.policy
--Djava.security.manager=default
+# Explicitly allow security manager (https://bugs.openjdk.java.net/browse/JDK-8270380)
+18-:-Djava.security.manager=allow
+
+# HDFS ForkJoinPool.common() support by SecurityManager
+-Djava.util.concurrent.ForkJoinPool.common.threadFactory=org.opensearch.secure_sm.SecuredForkJoinWorkerThreadFactory
 
 # Networking
 -Djava.net.preferIPv4Stack=true
@@ -510,8 +530,12 @@ show_optimization_status() {
     echo -e "  MySQL InnoDB Buffer Pool: ${mysql_buffer##*=}"
     
     # 检查PHP-FPM设置
-    local php_memory=$(sudo grep "memory_limit" "$PHP_INI_CONFIG" 2>/dev/null | grep -v "^;" || echo "未优化")
-    echo -e "  PHP Memory Limit: ${php_memory##*=}"
+    local php_fpm_memory=$(sudo grep "memory_limit" "$PHP_FPM_INI_CONFIG" 2>/dev/null | grep -v "^;" || echo "未优化")
+    echo -e "  PHP-FPM Memory Limit: ${php_fpm_memory##*=}"
+    
+    # 检查PHP-CLI设置
+    local php_cli_memory=$(sudo grep "memory_limit" "$PHP_CLI_INI_CONFIG" 2>/dev/null | grep -v "^;" || echo "未优化")
+    echo -e "  PHP-CLI Memory Limit: ${php_cli_memory##*=}"
     
     # 检查Nginx工作进程
     local nginx_workers=$(sudo grep "worker_processes" "$NGINX_CONFIG" 2>/dev/null | grep -v "^#" || echo "未优化")
@@ -567,7 +591,8 @@ restore_all() {
     
     restore_backup "$MYSQL_CONFIG" "mysqld.cnf" && ((restore_count++))
     restore_backup "$PHP_FPM_CONFIG" "www.conf" && ((restore_count++))
-    restore_backup "$PHP_INI_CONFIG" "php.ini" && ((restore_count++))
+    restore_backup "$PHP_FPM_INI_CONFIG" "php-fpm.ini" && ((restore_count++))
+    restore_backup "$PHP_CLI_INI_CONFIG" "php-cli.ini" && ((restore_count++))
     restore_backup "$NGINX_CONFIG" "nginx.conf" && ((restore_count++))
     restore_backup "$VALKEY_CONFIG" "valkey.conf" && ((restore_count++))
     restore_backup "$OPENSEARCH_CONFIG" "opensearch.yml" && ((restore_count++))
