@@ -1,4 +1,4 @@
-# Ansible LEMP Stack v1.6.3
+# Ansible LEMP Stack v1.6.4
 
 A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
 
@@ -188,6 +188,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Star the repository if it helps you! ⭐
 
 ## 🔄 Version History
+
+- **v1.6.4** - Comprehensive Troubleshooting Tools & Documentation
+  - 🔧 Added complete ModSecurity and Magento2 troubleshooting toolkit
+  - 📝 Created detailed upgrade guide from v1.5.0 to latest version
+  - 🛠️ Emergency fix scripts for 500 errors and CRS configuration issues
+  - 🎯 Magento2 admin area optimization and whitelist tools
+  - 📋 Interactive troubleshooting scripts with automated detection
+  - 🔒 Enhanced security configurations with admin area exceptions
 
 - **v1.6.3** - Magento2 Optimizer ModSecurity Integration
   - 🔒 Fixed Magento2 optimizer script to preserve ModSecurity configuration
