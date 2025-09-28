@@ -1,4 +1,4 @@
-# Ansible LEMP Stack v1.6.1
+# Ansible LEMP Stack v1.6.2
 
 A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
 
@@ -188,6 +188,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Star the repository if it helps you! ⭐
 
 ## 🔄 Version History
+
+- **v1.6.2** - Nginx & phpMyAdmin Configuration Consistency Fixes
+  - 🔧 Fixed automatic removal of default.conf to prevent server_name conflicts
+  - 🛠️ Enhanced basic-tools playbook for localhost compatibility
+  - ✅ Ensured phpMyAdmin nginx configuration consistency across deployments
+  - 📋 Improved playbook reproducibility and reliability
+  - 🎯 Standardized all manual fixes into automated playbook tasks
 
 - **v1.6.1** - Enhanced nginx Playbook & ModSecurity Compatibility
   - 🔧 Fixed nginx playbook for localhost deployment
