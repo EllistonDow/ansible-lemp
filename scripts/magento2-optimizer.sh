@@ -261,8 +261,10 @@ optimize_nginx() {
     
     create_backup "$NGINX_CONFIG" "nginx.conf"
     
-    # 创建优化的Nginx配置
+    # 创建优化的Nginx配置 (包含ModSecurity支持)
     sudo tee "$NGINX_CONFIG" > /dev/null << EOF
+load_module modules/ngx_http_modsecurity_module.so;
+
 user www-data;
 worker_processes auto;
 worker_rlimit_nofile 65535;
@@ -275,6 +277,10 @@ events {
 }
 
 http {
+
+    # ModSecurity Configuration
+    modsecurity on;
+    modsecurity_rules_file /etc/nginx/modsec/main.conf;
     # Basic Settings
     sendfile on;
     tcp_nopush on;
@@ -341,6 +347,13 @@ http {
     access_log /var/log/nginx/access.log main;
     error_log /var/log/nginx/error.log warn;
 
+    # Security Headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+
     # Virtual Host Configs
     include /etc/nginx/conf.d/*.conf;
     include /etc/nginx/sites-enabled/*;
@@ -351,7 +364,7 @@ EOF
     sudo mkdir -p /var/cache/nginx/fastcgi
     sudo chown -R www-data:www-data /var/cache/nginx/
     
-    echo -e "  ${CHECK_MARK} Nginx配置已优化 (支持Magento2缓存和高并发)"
+    echo -e "  ${CHECK_MARK} Nginx配置已优化 (支持Magento2缓存、高并发和ModSecurity WAF防护)"
 }
 
 optimize_valkey() {
