@@ -204,6 +204,19 @@
     daemon_reload: yes
   when: modsecurity_enabled | default(false)
 
+- name: Create nginx test wrapper script for ModSecurity compatibility
+  copy:
+    content: |
+      #!/bin/bash
+      # Nginx configuration test wrapper with LD_PRELOAD for ModSecurity compatibility
+      export LD_PRELOAD="/lib/x86_64-linux-gnu/libpcre.so.3"
+      exec nginx -t "$@"
+    dest: /usr/local/bin/nginx-test
+    mode: '0755'
+    owner: root
+    group: root
+  when: modsecurity_enabled | default(false)
+
 - name: Configure nginx
   template:
     src: nginx.conf.j2
