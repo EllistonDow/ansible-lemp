@@ -119,9 +119,9 @@ lc-messages-dir = /usr/share/mysql
 skip-external-locking
 
 # Magento2 Optimized Settings for 64GB RAM
-# Memory Settings (使用约20GB给MySQL，留足够内存给其他服务)
-innodb_buffer_pool_size = 20G
-innodb_buffer_pool_instances = 20
+# Memory Settings (使用约16GB给MySQL，留足够内存给其他服务)
+innodb_buffer_pool_size = 16G
+innodb_buffer_pool_instances = 16
 innodb_log_buffer_size = 256M
 key_buffer_size = 512M
 tmp_table_size = 512M
@@ -209,10 +209,10 @@ optimize_php_fpm() {
     
     # 优化PHP-FPM池配置
     sudo sed -i 's/^pm = .*/pm = dynamic/' "$PHP_FPM_CONFIG"
-    sudo sed -i 's/^pm.max_children = .*/pm.max_children = 120/' "$PHP_FPM_CONFIG"
-    sudo sed -i 's/^pm.start_servers = .*/pm.start_servers = 30/' "$PHP_FPM_CONFIG"
-    sudo sed -i 's/^pm.min_spare_servers = .*/pm.min_spare_servers = 20/' "$PHP_FPM_CONFIG"
-    sudo sed -i 's/^pm.max_spare_servers = .*/pm.max_spare_servers = 40/' "$PHP_FPM_CONFIG"
+    sudo sed -i 's/^pm.max_children = .*/pm.max_children = 80/' "$PHP_FPM_CONFIG"
+    sudo sed -i 's/^pm.start_servers = .*/pm.start_servers = 20/' "$PHP_FPM_CONFIG"
+    sudo sed -i 's/^pm.min_spare_servers = .*/pm.min_spare_servers = 15/' "$PHP_FPM_CONFIG"
+    sudo sed -i 's/^pm.max_spare_servers = .*/pm.max_spare_servers = 30/' "$PHP_FPM_CONFIG"
     sudo sed -i 's/^;pm.max_requests = .*/pm.max_requests = 1000/' "$PHP_FPM_CONFIG"
     
     # 添加进程管理设置
@@ -363,7 +363,7 @@ optimize_valkey() {
     sudo tee -a "$VALKEY_CONFIG" > /dev/null << 'EOF'
 
 # Magento2 Optimized Settings
-maxmemory 8gb
+maxmemory 6gb
 maxmemory-policy allkeys-lru
 maxclients 10000
 tcp-keepalive 60
@@ -446,9 +446,9 @@ EOF
 # OpenSearch JVM Options for Magento2 (Java 11 compatible)
 # 针对64GB RAM服务器优化
 
-# Heap Size Settings (使用12GB，适合多个Magento2站点)
--Xms12g
--Xmx12g
+# Heap Size Settings (使用8GB，适合多个Magento2站点)
+-Xms8g
+-Xmx8g
 
 # Garbage Collection Settings (Java 11 compatible)
 -XX:+UseG1GC
