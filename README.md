@@ -1,4 +1,4 @@
-# Ansible LEMP Stack v1.6.0
+# Ansible LEMP Stack v1.6.1
 
 A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
 
@@ -188,6 +188,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Star the repository if it helps you! ⭐
 
 ## 🔄 Version History
+
+- **v1.6.1** - Enhanced nginx Playbook & ModSecurity Compatibility
+  - 🔧 Fixed nginx playbook for localhost deployment
+  - 🛠️ Added automatic nginx-test wrapper script creation
+  - ✅ Validated ModSecurity protection against all attack vectors
+  - 📋 Enhanced deployment reliability and testing workflow
+  - 🎯 Simplified single-server deployment process
 
 - **v1.6.0** - RabbitMQ 4.1.4 & Erlang 27 Major Upgrade
   - ⬆️ Upgraded RabbitMQ from 3.x to 4.1.4
