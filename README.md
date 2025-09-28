@@ -1,4 +1,4 @@
-# Ansible LEMP Stack v1.6.4
+# Ansible LEMP Stack v1.6.5
 
 A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
 
@@ -188,6 +188,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Star the repository if it helps you! ⭐
 
 ## 🔄 Version History
+
+- **v1.6.5** - Advanced ModSecurity Level Control System
+  - 🎛️ Added ModSecurity 0-10 level control system for granular security tuning
+  - 🔧 Created intelligent toggle-modsecurity.sh with automatic configuration
+  - 📊 Implemented paranoia level and anomaly score threshold management
+  - 🛡️ Added production-optimized presets for different security requirements
+  - 🎯 Smart auto-detection of current security levels with detailed status display
+  - 🔄 Automatic backup and rollback functionality for safe configuration changes
+  - 📋 Interactive menu system for easy security level management
 
 - **v1.6.4** - Comprehensive Troubleshooting Tools & Documentation
   - 🔧 Added complete ModSecurity and Magento2 troubleshooting toolkit
