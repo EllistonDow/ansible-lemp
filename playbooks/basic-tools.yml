@@ -1,6 +1,7 @@
 ---
 - name: Basic Tools Installation Playbook
-  hosts: lemp_servers
+  hosts: localhost
+  connection: local
   become: yes
   gather_facts: yes
   
