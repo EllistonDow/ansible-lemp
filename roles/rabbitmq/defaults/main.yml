@@ -1,7 +1,14 @@
 ---
-rabbitmq_version: "4.1"
+# RabbitMQ 4.1.4 configuration
+rabbitmq_version: "4.1.4"
+rabbitmq_deb_version: "4.1.4-1"
 rabbitmq_user: "rabbitmq"
 rabbitmq_admin_user: "admin"
 rabbitmq_admin_password: "admin_password_change_me"
 rabbitmq_port: 5672
 rabbitmq_management_port: 15672
+
+# Erlang configuration
+erlang_version: "26.2.5"
+erlang_repo_key_url: "https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-erlang/gpg.E495BB49CC4BBE5B.key"
+erlang_repo_url: "https://ppa1.novemberain.com/rabbitmq/rabbitmq-erlang/deb/ubuntu"

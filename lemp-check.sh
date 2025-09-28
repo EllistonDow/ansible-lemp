@@ -76,7 +76,7 @@ check_service() {
     if systemctl is-active "$service" >/dev/null 2>&1; then
         local status="运行中"
         if [[ -n "$port" ]]; then
-            if netstat -tlpn 2>/dev/null | grep -q ":$port "; then
+            if (command -v ss >/dev/null 2>&1 && ss -tlpn 2>/dev/null | grep -q ":$port ") || (command -v netstat >/dev/null 2>&1 && netstat -tlpn 2>/dev/null | grep -q ":$port "); then
                 status="运行中 (端口:$port)"
             else
                 status="运行中 (端口未监听)"
@@ -98,7 +98,7 @@ check_special_service() {
     if eval $check_cmd >/dev/null 2>&1; then
         local status="运行中"
         if [[ -n "$port" ]]; then
-            if netstat -tlpn 2>/dev/null | grep -q ":$port "; then
+            if (command -v ss >/dev/null 2>&1 && ss -tlpn 2>/dev/null | grep -q ":$port ") || (command -v netstat >/dev/null 2>&1 && netstat -tlpn 2>/dev/null | grep -q ":$port "); then
                 status="运行中 (端口:$port)"
             fi
         fi
@@ -134,7 +134,7 @@ show_versions() {
     
     # 6. RabbitMQ
     if command -v rabbitmqctl >/dev/null 2>&1; then
-        local rabbitmq_version=$(timeout 3 sudo rabbitmqctl version 2>/dev/null | grep "RabbitMQ version" | head -1 2>/dev/null || echo "RabbitMQ (已安装)")
+        local rabbitmq_version=$(timeout 3 sudo rabbitmqctl version 2>/dev/null | head -1 || echo "RabbitMQ (已安装)")
         echo -e "  ${CHECK_MARK} ${GREEN}RabbitMQ${NC}: $rabbitmq_version"
     else
         echo -e "  ${CROSS_MARK} ${RED}RabbitMQ${NC}: 未安装"
@@ -155,7 +155,7 @@ show_versions() {
     
     # 9. OpenSearch
     if systemctl is-active opensearch >/dev/null 2>&1; then
-        local opensearch_version=$(curl -s http://localhost:9200 2>/dev/null | grep -o '"number":"[^"]*"' | cut -d'"' -f4 || echo "Unknown")
+        local opensearch_version=$(curl -s http://localhost:9200 2>/dev/null | jq -r '.version.number' 2>/dev/null || echo "Unknown")
         echo -e "  ${CHECK_MARK} ${GREEN}OpenSearch${NC}: $opensearch_version"
     else
         echo -e "  ${CROSS_MARK} ${RED}OpenSearch${NC}: 未运行"
@@ -204,7 +204,7 @@ show_services() {
     check_service "webmin" "Webmin" "10000"
     
     # 特殊检查
-    if [[ -f /etc/nginx/sites-enabled/phpmyadmin.conf ]]; then
+    if [[ -f /etc/nginx/sites-enabled/phpmyadmin.conf ]] || [[ -f /etc/nginx/conf.d/phpmyadmin.conf ]]; then
         echo -e "  ${CHECK_MARK} ${GREEN}phpMyAdmin${NC}: 已配置 (http://localhost/phpmyadmin)"
     else
         echo -e "  ${WARNING_MARK} ${YELLOW}phpMyAdmin${NC}: 未配置nginx站点"

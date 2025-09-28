@@ -1,4 +1,4 @@
-# Ansible LEMP Stack v1.0.0
+# Ansible LEMP Stack v1.6.0
 
 A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
 
@@ -23,7 +23,7 @@ This Ansible project provides a fully automated installation and configuration o
 | OpenSearch | 2.19 | ✅ |
 | Percona MySQL | 8.4 | ✅ |
 | PHP | 8.3 | ✅ |
-| RabbitMQ | 4.1 | ✅ |
+| RabbitMQ | 4.1.4 | ✅ |
 | Valkey | 8 | ✅ |
 | Varnish | 7.6 | ✅ |
 | Nginx | 1.27.4 + ModSecurity | ✅ |
@@ -188,6 +188,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Star the repository if it helps you! ⭐
 
 ## 🔄 Version History
+
+- **v1.6.0** - RabbitMQ 4.1.4 & Erlang 27 Major Upgrade
+  - ⬆️ Upgraded RabbitMQ from 3.x to 4.1.4
+  - ⬆️ Upgraded Erlang from OTP 25 to OTP 27
+  - 🔧 Fixed ModSecurity PCRE compatibility issues
+  - 🔧 Fixed phpMyAdmin Nginx configuration
+  - 🛠️ Improved LEMP check script with better detection
+  - 📝 Added comprehensive troubleshooting documentation
 
 - **v1.0.0** - Initial release with full LEMP stack automation
   - Complete Ansible automation

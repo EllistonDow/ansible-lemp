@@ -120,16 +120,44 @@ install_percona() {
 }
 
 install_rabbitmq() {
-    # 安装RabbitMQ
+    echo "📦 安装Erlang 26+ 和 RabbitMQ 4.1.4..."
+    
+    # 清理旧的Erlang包
+    sudo apt remove --purge -y erlang-base erlang-crypto erlang-eldap erlang-inets erlang-mnesia erlang-os-mon erlang-parsetools erlang-public-key erlang-runtime-tools erlang-ssl erlang-syntax-tools erlang-tools erlang-xmerl 2>/dev/null || true
+    
+    # 安装依赖
     sudo apt update
-    sudo apt install -y rabbitmq-server
+    sudo apt install -y curl gnupg wget ca-certificates lsb-release
+    
+    # 添加Erlang仓库
+    wget -O- https://keys.openpgp.org/vks/v1/by-fingerprint/E495BB49CC4BBE5B | sudo gpg --dearmor -o /usr/share/keyrings/erlang-archive-keyring.gpg
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/erlang-archive-keyring.gpg] https://ppa1.novemberain.com/rabbitmq/rabbitmq-erlang/deb/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/erlang.list
+    
+    # 安装Erlang 26+
+    sudo apt update
+    sudo apt install -y erlang-base erlang-crypto erlang-eldap erlang-inets erlang-mnesia erlang-os-mon erlang-parsetools erlang-public-key erlang-runtime-tools erlang-ssl erlang-syntax-tools erlang-tools erlang-xmerl erlang-asn1
+    
+    # 验证Erlang版本
+    echo "📋 Erlang版本: $(erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell 2>/dev/null | tr -d '\"')"
+    
+    # 下载并安装RabbitMQ 4.1.4
+    wget -O /tmp/rabbitmq-server_4.1.4-1_all.deb https://github.com/rabbitmq/rabbitmq-server/releases/download/v4.1.4/rabbitmq-server_4.1.4-1_all.deb
+    sudo dpkg -i /tmp/rabbitmq-server_4.1.4-1_all.deb
+    
+    # 清理下载文件
+    rm -f /tmp/rabbitmq-server_4.1.4-1_all.deb
     
     # 启动服务
     sudo systemctl enable rabbitmq-server
     sudo systemctl start rabbitmq-server
     
+    # 等待服务就绪
+    sleep 10
+    
     # 启用管理插件
     sudo rabbitmq-plugins enable rabbitmq_management
+    
+    echo "✅ RabbitMQ 4.1.4安装完成"
 }
 
 install_varnish() {

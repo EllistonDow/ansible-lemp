@@ -9,30 +9,117 @@
       - curl
       - gnupg
       - apt-transport-https
+      - wget
+      - ca-certificates
+      - lsb-release
     state: present
 
-- name: Check if Ubuntu has RabbitMQ in official repos
-  shell: apt-cache policy rabbitmq-server
-  register: rabbitmq_availability
-  failed_when: false
-  changed_when: false
-
-- name: Install RabbitMQ server
+- name: Remove old Erlang packages
   apt:
-    name: rabbitmq-server
+    name:
+      - erlang-base
+      - erlang-crypto
+      - erlang-eldap
+      - erlang-inets
+      - erlang-mnesia
+      - erlang-os-mon
+      - erlang-parsetools
+      - erlang-public-key
+      - erlang-runtime-tools
+      - erlang-ssl
+      - erlang-syntax-tools
+      - erlang-tools
+      - erlang-xmerl
+    state: absent
+    purge: yes
+  ignore_errors: yes
+
+- name: Add Erlang repository GPG key
+  get_url:
+    url: "{{ erlang_repo_key_url }}"
+    dest: /tmp/erlang-key.asc
+    mode: '0644'
+
+- name: Import Erlang GPG key
+  apt_key:
+    file: /tmp/erlang-key.asc
+    state: present
+
+- name: Add Erlang repository
+  apt_repository:
+    repo: "deb [arch=amd64] {{ erlang_repo_url }} {{ ansible_distribution_release }} main"
+    state: present
+    filename: erlang
+
+- name: Update apt cache after adding Erlang repository
+  apt:
+    update_cache: yes
+
+- name: Install Erlang 26+
+  apt:
+    name:
+      - erlang-base
+      - erlang-crypto
+      - erlang-eldap
+      - erlang-inets
+      - erlang-mnesia
+      - erlang-os-mon
+      - erlang-parsetools
+      - erlang-public-key
+      - erlang-runtime-tools
+      - erlang-ssl
+      - erlang-syntax-tools
+      - erlang-tools
+      - erlang-xmerl
+      - erlang-asn1
     state: present
     update_cache: yes
 
-- name: Enable RabbitMQ management plugin
-  rabbitmq_plugin:
-    names: rabbitmq_management
-    state: enabled
+- name: Verify Erlang version
+  shell: erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().' -noshell
+  register: erlang_version_output
+  changed_when: false
+
+- name: Display Erlang version
+  debug:
+    msg: "Erlang OTP version: {{ erlang_version_output.stdout.strip('\"') }}"
+
+- name: Download RabbitMQ 4.1.4 package
+  get_url:
+    url: "https://github.com/rabbitmq/rabbitmq-server/releases/download/v{{ rabbitmq_version }}/rabbitmq-server_{{ rabbitmq_deb_version }}_all.deb"
+    dest: "/tmp/rabbitmq-server_{{ rabbitmq_deb_version }}_all.deb"
+    mode: '0644'
+
+- name: Install RabbitMQ 4.1.4
+  apt:
+    deb: "/tmp/rabbitmq-server_{{ rabbitmq_deb_version }}_all.deb"
+    state: present
 
 - name: Start and enable RabbitMQ service
   systemd:
     name: rabbitmq-server
     state: started
     enabled: yes
+
+- name: Wait for RabbitMQ to be ready
+  wait_for:
+    port: "{{ rabbitmq_port }}"
+    host: localhost
+    delay: 10
+    timeout: 60
+
+- name: Enable RabbitMQ management plugin
+  rabbitmq_plugin:
+    names: rabbitmq_management
+    state: enabled
+  notify: restart rabbitmq
+
+- name: Wait for RabbitMQ management interface
+  wait_for:
+    port: "{{ rabbitmq_management_port }}"
+    host: localhost
+    delay: 5
+    timeout: 60
 
 - name: Create RabbitMQ admin user
   rabbitmq_user:
@@ -41,3 +128,13 @@
     tags: administrator
     state: present
   no_log: true
+
+- name: Clean up downloaded package
+  file:
+    path: "/tmp/rabbitmq-server_{{ rabbitmq_deb_version }}_all.deb"
+    state: absent
+
+- name: Clean up GPG key file
+  file:
+    path: /tmp/erlang-key.asc
+    state: absent

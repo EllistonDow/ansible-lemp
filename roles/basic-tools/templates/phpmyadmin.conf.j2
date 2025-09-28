@@ -1,19 +1,27 @@
 server {
     listen 80;
-    server_name phpmyadmin.local;
-    root /usr/share/phpmyadmin;
-    index index.php index.html index.htm;
-
-    location / {
-        try_files $uri $uri/ =404;
+    server_name localhost;
+    
+    location /phpmyadmin {
+        alias /usr/share/phpmyadmin;
+        index index.php index.html index.htm;
+        
+        location ~ ^/phpmyadmin/(.+\.php)$ {
+            alias /usr/share/phpmyadmin/$1;
+            fastcgi_split_path_info ^(.+\.php)(/.+)$;
+            fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+            fastcgi_index index.php;
+            include fastcgi_params;
+            fastcgi_param SCRIPT_FILENAME $request_filename;
+            fastcgi_param PATH_INFO $fastcgi_path_info;
+        }
+        
+        location ~* ^/phpmyadmin/(.+\.(jpg|jpeg|gif|css|png|js|ico|html|xml|txt))$ {
+            alias /usr/share/phpmyadmin/$1;
+        }
     }
-
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
-    }
-
-    location ~ /\.ht {
+    
+    location ~ /phpmyadmin/\.ht {
         deny all;
     }
 

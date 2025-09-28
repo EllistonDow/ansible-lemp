@@ -10,6 +10,7 @@
       - gnupg2
       - ca-certificates
       - lsb-release
+      - net-tools
     state: present
 
 - name: Add nginx signing key
@@ -90,7 +91,7 @@
   shell: |
     NGINX_DIR="{{ nginx_version_file['content'] | b64decode | trim }}"
     cd "/usr/local/src/${NGINX_DIR}"
-    ./configure {{ nginx_configure_args.stdout.split('configure arguments: ')[1] }} --add-dynamic-module=/usr/local/src/ModSecurity-nginx
+    ./configure {{ nginx_configure_args.stdout.split('configure arguments: ')[1] }} --without-pcre2 --with-pcre --add-dynamic-module=/usr/local/src/ModSecurity-nginx
     make modules
     cp objs/ngx_http_modsecurity_module.so /etc/nginx/modules/
   when: modsecurity_enabled | default(false)
@@ -120,6 +121,9 @@
       # ModSecurity configuration
       Include /etc/modsecurity/modsecurity.conf
       
+      # Include OWASP CRS setup
+      Include /etc/modsecurity/crs-setup.conf
+      
       # Include OWASP CRS rules if available
       Include /etc/modsecurity/rules/*.conf
     owner: root
@@ -148,6 +152,9 @@
       SecAuditLogParts ABIJDEFHZ
       SecAuditLogType Serial
       SecAuditLog /var/log/nginx/modsec_audit.log
+      
+      # Set CRS setup version to avoid initialization errors
+      SecAction "id:900990,phase:1,pass,t:none,nolog,setvar:tx.crs_setup_version=335"
     owner: root
     group: root
     mode: '0644'
@@ -159,6 +166,42 @@
     dest: /etc/modsecurity/rules
     state: link
     force: yes
+  when: modsecurity_enabled | default(false)
+
+- name: Copy CRS setup configuration
+  copy:
+    src: /etc/modsecurity/crs/crs-setup.conf
+    dest: /etc/modsecurity/crs-setup.conf
+    remote_src: yes
+    owner: root
+    group: root
+    mode: '0644'
+  when: modsecurity_enabled | default(false)
+
+- name: Create systemd override directory for nginx
+  file:
+    path: /etc/systemd/system/nginx.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: modsecurity_enabled | default(false)
+
+- name: Create systemd override for PCRE library loading
+  copy:
+    dest: /etc/systemd/system/nginx.service.d/override.conf
+    content: |
+      [Service]
+      Environment=LD_PRELOAD=/lib/x86_64-linux-gnu/libpcre.so.3
+    owner: root
+    group: root
+    mode: '0644'
+  when: modsecurity_enabled | default(false)
+  notify: reload systemd
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
   when: modsecurity_enabled | default(false)
 
 - name: Configure nginx
