@@ -393,6 +393,22 @@ EOF
     else
         echo -e "  ${WARNING_MARK} 未找到toggle-modsecurity.sh，请手动设置ModSecurity级别1"
     fi
+
+    # 检查PCRE兼容性
+    echo -e "  ${GEAR} 检查ModSecurity PCRE兼容性..."
+    if nginx -t 2>&1 | grep -q "undefined symbol: pcre_malloc"; then
+        echo -e "  ${WARNING_MARK} 检测到PCRE兼容性问题，运行自动修复..."
+        if [[ -f "./scripts/fix-modsecurity-pcre.sh" ]]; then
+            ./scripts/fix-modsecurity-pcre.sh || {
+                echo -e "  ${WARNING_MARK} PCRE修复失败，ModSecurity可能已被禁用"
+                echo -e "  ${INFO_MARK} 请查看 /var/log/nginx-pcre-fix.log 获取详细信息"
+            }
+        else
+            echo -e "  ${WARNING_MARK} 未找到PCRE修复脚本，请手动运行: /usr/local/bin/nginx-pcre-fix"
+        fi
+    else
+        echo -e "  ${CHECK_MARK} ModSecurity PCRE兼容性正常"
+    fi
     
     echo -e "  ${CHECK_MARK} Nginx配置已优化 (支持Magento2缓存、高并发和ModSecurity WAF防护)"
     echo -e "  ${INFO_MARK} ModSecurity已设置为级别1 (适合Magento2生产环境)"
