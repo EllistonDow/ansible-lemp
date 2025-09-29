@@ -1,4 +1,5 @@
 ---
+# Enhanced nginx uninstall script for both package and source installations
 - name: Stop nginx service
   systemd:
     name: nginx
@@ -6,21 +7,194 @@
     enabled: no
   ignore_errors: yes
 
+- name: Check if nginx is source-compiled
+  stat:
+    path: /usr/local/src/nginx-1.29.1
+  register: source_nginx
+
+- name: Check current nginx version
+  command: /usr/sbin/nginx -V
+  register: nginx_version_check
+  ignore_errors: yes
+
+- name: Display current nginx installation type
+  debug:
+    msg: |
+      {% if source_nginx.stat.exists %}
+      🔍 检测到源码编译的nginx安装
+      {% if nginx_version_check.rc == 0 %}
+      当前版本: {{ nginx_version_check.stderr.split('\n')[0] }}
+      编译参数: {{ nginx_version_check.stderr.split('\n')[3:] | join(' ') }}
+      {% endif %}
+      {% else %}
+      🔍 检测到包管理器安装的nginx
+      {% endif %}
+
+# Remove source-compiled nginx files
+- name: Remove source-compiled nginx binary
+  file:
+    path: /usr/sbin/nginx
+    state: absent
+  when: source_nginx.stat.exists
+
+- name: Remove source-compiled nginx systemd service
+  file:
+    path: /etc/systemd/system/nginx.service
+    state: absent
+  when: source_nginx.stat.exists
+
+- name: Remove all nginx source build directories and files
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/local/src/nginx-1.29.1
+    - /usr/local/src/nginx-1.29.1.tar.gz
+    - /usr/local/src/nginx-1.28.0
+    - /usr/local/src/nginx-1.28.0.tar.gz
+    - /usr/local/src/nginx-1.28.0.tar.gz.1
+    - /usr/local/src/nginx-1.28.0.tar.gz.2
+    - /usr/local/src/nginx-1.28.0.tar.gz.3
+    - /usr/local/src/nginx-1.28.0.tar.gz.4
+    - /usr/local/src/nginx-1.28.0.tar.gz.5
+    - /usr/local/src/nginx-1.28.0.tar.gz.6
+    - /usr/local/src/ModSecurity-nginx
+  ignore_errors: yes
+
+# Remove package-installed nginx (including debug version)
 - name: Remove nginx packages
   apt:
     name:
       - nginx
+      - nginx-common
+      - nginx-core
+      - nginx-full
+      - nginx-light
+      - nginx-extras
       - libmodsecurity3
       - modsecurity-crs
     state: absent
     purge: yes
+  ignore_errors: yes
 
-- name: Remove nginx configuration
+- name: Remove nginx debug binary
+  file:
+    path: /usr/sbin/nginx-debug
+    state: absent
+
+- name: Remove custom nginx test script
+  file:
+    path: /usr/local/bin/nginx-test
+    state: absent
+
+# Remove shared nginx files and directories
+- name: Remove nginx configuration directory
   file:
     path: /etc/nginx
     state: absent
+
+- name: Remove nginx log directory
+  file:
+    path: /var/log/nginx
+    state: absent
+
+- name: Remove nginx cache directory
+  file:
+    path: /var/cache/nginx
+    state: absent
+
+- name: Remove nginx runtime directory files
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /run/nginx.pid
+    - /run/nginx.lock
+  ignore_errors: yes
+
+- name: Remove ModSecurity configuration
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/modsecurity
+    - /etc/nginx/modsec
+  ignore_errors: yes
 
 - name: Remove nginx repository
   apt_repository:
     repo: "deb https://nginx.org/packages/ubuntu {{ ansible_distribution_release }} nginx"
     state: absent
+  ignore_errors: yes
+
+- name: Remove systemd helper files
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /var/lib/systemd/deb-systemd-helper-enabled/multi-user.target.wants/nginx.service
+    - /var/lib/systemd/deb-systemd-helper-enabled/nginx-debug.service.dsh-also
+    - /var/lib/systemd/deb-systemd-helper-enabled/nginx.service.dsh-also
+    - /etc/systemd/system/nginx.service.d
+  ignore_errors: yes
+
+- name: Reload systemd daemon after service removal
+  systemd:
+    daemon_reload: yes
+
+- name: Clean package manager cache
+  apt:
+    autoclean: yes
+    autoremove: yes
+
+- name: Clean up any remaining nginx processes
+  shell: |
+    pkill nginx || true
+    killall nginx || true
+  ignore_errors: yes
+
+- name: Verify nginx removal
+  shell: |
+    if command -v nginx >/dev/null 2>&1; then
+      echo "WARNING: nginx binary still exists at $(which nginx)"
+      exit 1
+    else
+      echo "SUCCESS: nginx completely removed"
+      exit 0
+    fi
+  register: removal_check
+  ignore_errors: yes
+
+- name: Display uninstall completion message
+  debug:
+    msg: |
+      🎯 Nginx卸载完成状态：
+      
+      {% if removal_check.rc == 0 %}
+      ✅ Nginx已完全卸载成功
+      
+      📋 已清理的内容：
+      {% if source_nginx.stat.exists %}
+      - 源码编译的nginx 1.29.1二进制文件
+      - 源码构建目录 (/usr/local/src/nginx-*)
+      - ModSecurity源码目录
+      - 自定义systemd服务文件
+      {% endif %}
+      - 包管理器安装的nginx包
+      - 配置目录 (/etc/nginx)
+      - 日志目录 (/var/log/nginx)
+      - 缓存目录 (/var/cache/nginx)
+      - ModSecurity配置文件
+      - 运行时文件 (pid, lock)
+      
+      🔄 下一步：
+      - 重启系统以确保完全清理: sudo reboot
+      - 或重新安装nginx: ansible-playbook playbooks/nginx.yml
+      {% else %}
+      ⚠️  警告：{{ removal_check.stdout }}
+      
+      🛠️  手动清理建议：
+      - 检查剩余文件: sudo find / -name "*nginx*" 2>/dev/null
+      - 强制删除二进制: sudo rm -f $(which nginx)
+      - 清理PATH缓存: hash -r
+      {% endif %}

@@ -10,13 +10,20 @@
     nginx_keepalive_timeout: "30"
     nginx_client_max_body_size: "64M"
     nginx_server_tokens: "off"
-    modsecurity_enabled: "{{ modsecurity_enabled | default(false) }}"
+    modsecurity_enabled: true  # Default enable ModSecurity
+    # Support both legacy nginx_action and standard action variables
+    nginx_action: "{{ action | default('install') }}"
 
   tasks:
     - name: Include install tasks
       include_tasks: ../roles/nginx/tasks/install.yml
-      when: nginx_action is not defined or nginx_action == 'install'
+      when: nginx_action == 'install'
 
     - name: Include uninstall tasks
       include_tasks: ../roles/nginx/tasks/uninstall.yml
-      when: nginx_action is defined and nginx_action == 'uninstall'
+      when: nginx_action == 'uninstall'
+      
+    - name: Display installation status
+      debug:
+        msg: "Nginx {{ nginx_action }} completed successfully"
+      when: nginx_action == 'install'

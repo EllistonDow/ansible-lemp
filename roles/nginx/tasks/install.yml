@@ -14,6 +14,7 @@
       - gnupg2
       - ca-certificates
       - lsb-release
+      
       - wget
       - git
       - libpcre3-dev
@@ -58,7 +59,7 @@
     dest: "/usr/local/src/ModSecurity-nginx"
     depth: 1
   when: 
-    - modsecurity_enabled | default(false)
+    - modsecurity_enabled | default(true)
     - not modsec_nginx_dir.stat.exists
 
 - name: Configure nginx 1.29.1 with ModSecurity and full SSL support
@@ -156,7 +157,7 @@
     owner: root
     group: root
     remote_src: yes
-  when: modsecurity_enabled | default(false)
+  when: modsecurity_enabled | default(true)
 
 - name: Install nginx configuration files
   copy:
@@ -182,7 +183,7 @@
     owner: root
     group: root
     mode: '0755'
-  when: modsecurity_enabled | default(false)
+  when: modsecurity_enabled | default(true)
 
 - name: Create ModSecurity main configuration
   copy:
@@ -199,7 +200,7 @@
     owner: root
     group: root
     mode: '0644'
-  when: modsecurity_enabled | default(false)
+  when: modsecurity_enabled | default(true)
 
 - name: Create ModSecurity configuration (v3.0 compatible)
   copy:
@@ -212,10 +213,6 @@
       SecRequestBodyNoFilesLimit 131072
       # SecRequestBodyInMemoryLimit is not supported in ModSecurity v3.0 - removed
       SecRequestBodyLimitAction Reject
-      SecRule REQUEST_HEADERS:Content-Type "(?:application(?:/soap\+|/)|text/)xml" \
-           "id:'200000',phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=XML"
-      SecRule REQUEST_HEADERS:Content-Type "application/json" \
-           "id:'200001',phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"
       SecRequestBodyJsonDepthLimit 512
       SecResponseBodyAccess On
       SecResponseBodyMimeType text/plain text/html text/xml
@@ -235,7 +232,7 @@
     owner: root
     group: root
     mode: '0644'
-  when: modsecurity_enabled | default(false)
+  when: modsecurity_enabled | default(true)
 
 - name: Setup OWASP CRS rules link
   file:
@@ -243,18 +240,89 @@
     dest: /etc/modsecurity/rules
     state: link
     force: yes
-  when: modsecurity_enabled | default(false)
+  when: modsecurity_enabled | default(true)
+
+- name: Ensure ModSecurity runtime libraries are installed
+  apt:
+    name:
+      - libmodsecurity3
+      - modsecurity-crs
+    state: present
+  when: modsecurity_enabled | default(true)
+
+- name: Copy unicode.mapping file for ModSecurity
+  copy:
+    src: "/usr/local/src/ModSecurity-nginx/.github/nginx/unicode.mapping"
+    dest: "/etc/modsecurity/unicode.mapping"
+    remote_src: yes
+    owner: root
+    group: root
+    mode: '0644'
+  when: modsecurity_enabled | default(true)
+
+- name: Remove existing CRS directory if exists
+  file:
+    path: /etc/modsecurity/crs
+    state: absent
+  when: modsecurity_enabled | default(true)
+
+- name: Create CRS symbolic link
+  file:
+    src: /usr/share/modsecurity-crs
+    dest: /etc/modsecurity/crs
+    state: link
+    force: yes
+  when: modsecurity_enabled | default(true)
 
 - name: Copy CRS setup configuration
   copy:
-    src: /etc/modsecurity/crs/crs-setup.conf
+    src: /usr/share/modsecurity-crs/crs-setup.conf.example
     dest: /etc/modsecurity/crs-setup.conf
     remote_src: yes
     owner: root
     group: root
     mode: '0644'
-  when: modsecurity_enabled | default(false)
+  when: modsecurity_enabled | default(true)
   ignore_errors: yes
+
+- name: Create minimal CRS setup configuration
+  copy:
+    dest: /etc/modsecurity/crs-setup.conf
+    content: |
+      # OWASP ModSecurity Core Rule Set Configuration
+      # This is a minimal configuration for OWASP CRS
+      
+      # Set anomaly scoring thresholds (lower = more sensitive)
+      SecAction \
+        "id:900110,\
+         phase:1,\
+         nolog,\
+         pass,\
+         t:none,\
+         setvar:tx.inbound_anomaly_score_threshold=5,\
+         setvar:tx.outbound_anomaly_score_threshold=4"
+      
+      # Set paranoia level (1-4, higher = more rules)
+      SecAction \
+        "id:900000,\
+         phase:1,\
+         nolog,\
+         pass,\
+         t:none,\
+         setvar:tx.paranoia_level=1"
+      
+      # Enable sampling percentage
+      SecAction \
+        "id:900400,\
+         phase:1,\
+         nolog,\
+         pass,\
+         t:none,\
+         setvar:tx.sampling_percentage=100"
+    owner: root
+    group: root
+    mode: '0644'
+  when: modsecurity_enabled | default(true)
 
 - name: Configure nginx
   template:
