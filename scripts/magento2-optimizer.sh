@@ -281,11 +281,24 @@ optimize_nginx() {
     
     create_backup "$NGINX_CONFIG" "nginx.conf"
     
+    # 获取当前nginx用户设置，保持不变
+    local current_user
+    if [[ -f "$NGINX_CONFIG" ]]; then
+        current_user=$(grep "^user " "$NGINX_CONFIG" | head -1 | awk '{print $2}' | sed 's/;//')
+        if [[ -z "$current_user" ]]; then
+            current_user="www-data"  # 默认用户
+        fi
+    else
+        current_user="www-data"  # 默认用户
+    fi
+    
+    echo -e "  ${INFO_MARK} 保持nginx用户为: ${current_user}"
+    
     # 创建优化的Nginx配置 (包含ModSecurity支持)
     sudo tee "$NGINX_CONFIG" > /dev/null << EOF
 load_module modules/ngx_http_modsecurity_module.so;
 
-user www-data;
+user ${current_user};
 worker_processes auto;
 worker_rlimit_nofile 65535;
 pid /run/nginx.pid;
@@ -367,12 +380,12 @@ http {
     access_log /var/log/nginx/access.log main;
     error_log /var/log/nginx/error.log warn;
 
-    # Security Headers
+    # Security Headers (Magento2兼容)
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-XSS-Protection "1; mode=block" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "no-referrer-when-downgrade" always;
-    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+    # 注意: Content-Security-Policy会导致Magento2后台菜单无法工作，已移除
 
     # Virtual Host Configs
     include /etc/nginx/conf.d/*.conf;
@@ -745,29 +758,57 @@ restore_php() {
 
 # 单独还原Nginx配置
 restore_nginx() {
-    echo -e "${WARNING_MARK} ${YELLOW}还原Nginx配置...${NC}"
-    if restore_backup "$NGINX_CONFIG" "nginx.conf"; then
-        echo -e "${INFO_MARK} ${YELLOW}测试Nginx配置...${NC}"
-        if sudo nginx -t; then
-            sudo systemctl restart nginx
-            echo -e "${CHECK_MARK} ${GREEN}Nginx配置已还原并重启服务${NC}"
-        else
-            echo -e "${WARNING_MARK} ${YELLOW}Nginx配置测试失败，可能是站点配置与主配置不兼容${NC}"
-            echo -e "${INFO_MARK} ${CYAN}建议检查以下问题:${NC}"
-            echo -e "  • 站点配置是否使用了ModSecurity指令但主配置未加载模块"
-            echo -e "  • 站点配置是否使用了FastCGI缓存但主配置未定义缓存路径"
-            echo -e "${INFO_MARK} ${YELLOW}尝试重新加载配置...${NC}"
-            if sudo nginx -t 2>&1 | grep -q "modsecurity"; then
-                echo -e "  ${INFO_MARK} 检测到ModSecurity相关错误，建议运行:"
-                echo -e "    ${GREEN}./scripts/fix-modsecurity-admin.sh${NC}"
-            fi
-            if sudo nginx -t 2>&1 | grep -q "fastcgi_cache"; then
-                echo -e "  ${INFO_MARK} 检测到FastCGI缓存相关错误，建议检查缓存配置"
-            fi
-            echo -e "${CROSS_MARK} ${RED}Nginx配置还原后测试失败，请手动检查配置${NC}"
+    echo -e "${WARNING_MARK} ${YELLOW}还原Nginx到精简基础配置...${NC}"
+    
+    # 获取当前nginx用户设置，保持不变
+    local current_user
+    if [[ -f "$NGINX_CONFIG" ]]; then
+        current_user=$(grep "^user " "$NGINX_CONFIG" | head -1 | awk '{print $2}' | sed 's/;//')
+        if [[ -z "$current_user" ]]; then
+            current_user="www-data"  # 默认用户
         fi
     else
-        echo -e "${CROSS_MARK} ${RED}Nginx配置还原失败${NC}"
+        current_user="www-data"  # 默认用户
+    fi
+    
+    echo -e "  ${INFO_MARK} 保持nginx用户为: ${current_user}"
+    echo -e "  ${INFO_MARK} 使用最精简配置 (无ModSecurity、无缓存、无速率限制)"
+    
+    # 创建备份
+    create_backup "$NGINX_CONFIG" "nginx.conf"
+    
+    # 使用精简配置但保持当前用户
+    sudo cp /opt/lemp-backups/magento2-optimizer/nginx.conf.minimal "$NGINX_CONFIG"
+    sudo sed -i "s/^user doge;/user ${current_user};/" "$NGINX_CONFIG"
+    
+    # 确保站点配置兼容 - 注释掉所有ModSecurity指令
+    echo -e "  ${INFO_MARK} 清理站点配置中的ModSecurity指令..."
+    for site_config in /etc/nginx/sites-available/*.conf; do
+        if [[ -f "$site_config" ]]; then
+            sudo sed -i 's/modsecurity off;/#modsecurity off;/' "$site_config" 2>/dev/null || true
+            sudo sed -i 's/modsecurity on;/#modsecurity on;/' "$site_config" 2>/dev/null || true
+        fi
+    done
+    
+    echo -e "${INFO_MARK} ${YELLOW}测试Nginx配置...${NC}"
+    if sudo nginx -t; then
+        sudo systemctl restart nginx
+        echo -e "${CHECK_MARK} ${GREEN}Nginx已还原为精简基础配置并重启服务${NC}"
+        echo -e "  ${INFO_MARK} ${CYAN}当前配置特点:${NC}"
+        echo -e "    • 无ModSecurity WAF"
+        echo -e "    • 无FastCGI缓存"
+        echo -e "    • 无速率限制"  
+        echo -e "    • 无安全头部"
+        echo -e "    • keepalive_timeout: 65秒"
+        echo -e "    • 基础Gzip压缩"
+        echo -e "    • 适合Magento2基础运行"
+    else
+        echo -e "${CROSS_MARK} ${RED}Nginx配置测试失败${NC}"
+        # 如果失败，尝试恢复原配置
+        if restore_backup "$NGINX_CONFIG" "nginx.conf"; then
+            echo -e "${INFO_MARK} ${YELLOW}已回滚到上一个配置${NC}"
+            sudo nginx -t && sudo systemctl restart nginx
+        fi
     fi
 }
 

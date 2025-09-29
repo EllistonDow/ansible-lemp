@@ -145,16 +145,27 @@ set_modsecurity_level() {
             sudo sed -i 's/modsecurity on/modsecurity off/' "$NGINX_CONF"
         fi
     else
-        # 级别1-10：配置相应参数
+        # 级别1-10：启用ModSecurity
+        
+        echo -e "  ${INFO_MARK} 启用ModSecurity模块..."
+        # 取消注释模块加载
+        sudo sed -i 's/^#load_module modules\/ngx_http_modsecurity_module.so;/load_module modules\/ngx_http_modsecurity_module.so;/' "$NGINX_CONF"
+        
+        # 如果没有模块加载行，添加一个
+        if ! grep -q "load_module.*modsecurity" "$NGINX_CONF"; then
+            sudo sed -i '1i load_module modules/ngx_http_modsecurity_module.so;' "$NGINX_CONF"
+        fi
+        
+        echo -e "  ${INFO_MARK} 启用ModSecurity指令..."
+        # 取消注释modsecurity指令（处理空格）
+        sudo sed -i 's/^[[:space:]]*#modsecurity on;/    modsecurity on;/' "$NGINX_CONF"
+        sudo sed -i 's/^[[:space:]]*#modsecurity off;/    modsecurity on;/' "$NGINX_CONF"
+        sudo sed -i 's/^[[:space:]]*#modsecurity_rules_file/    modsecurity_rules_file/' "$NGINX_CONF"
         
         # 确保ModSecurity启用
         if grep -q "modsecurity off" "$NGINX_CONF" 2>/dev/null; then
             sudo sed -i 's/modsecurity off/modsecurity on/' "$NGINX_CONF"
         elif ! grep -q "modsecurity on" "$NGINX_CONF" 2>/dev/null; then
-            # 检查是否加载了模块
-            if ! grep -q "load_module.*modsecurity" "$NGINX_CONF"; then
-                sudo sed -i '1i load_module modules/ngx_http_modsecurity_module.so;\n' "$NGINX_CONF"
-            fi
             # 在http块中添加ModSecurity配置
             sudo sed -i '/^http {/a\\n    # ModSecurity Configuration\n    modsecurity on;\n    modsecurity_rules_file /etc/nginx/modsec/main.conf;' "$NGINX_CONF"
         fi
@@ -213,7 +224,7 @@ EOF
 
 # Level 1-3: Additional relaxed settings for production
 # Magento2 Admin area exclusion
-SecRule REQUEST_URI "@beginsWith /admin" \
+SecRule REQUEST_URI "@rx ^/admin" \
     "id:900200,phase:1,pass,nolog,ctl:ruleEngine=Off"
 
 # Common false positive exclusions

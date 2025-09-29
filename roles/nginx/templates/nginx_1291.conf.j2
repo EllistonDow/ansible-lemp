@@ -1,0 +1,177 @@
+# Nginx 1.29.1 Configuration with ModSecurity Support
+# Optimized for PCRE compatibility
+
+{% if modsecurity_enabled %}
+load_module modules/ngx_http_modsecurity_module.so;
+{% endif %}
+
+user {{ nginx_user }};
+worker_processes {{ nginx_worker_processes }};
+worker_rlimit_nofile 65535;
+pid /run/nginx.pid;
+
+# Events block
+events {
+    worker_connections 4096;
+    use epoll;
+    multi_accept on;
+}
+
+# HTTP block
+http {
+    # Basic Settings
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 30;
+    keepalive_requests 1000;
+    types_hash_max_size 2048;
+    server_tokens off;
+    client_max_body_size 64M;
+    client_body_buffer_size 256k;
+    client_header_buffer_size 16k;
+    large_client_header_buffers 4 32k;
+
+    # MIME Types
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # Security Headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+
+    # ModSecurity Configuration (nginx 1.29.1 compatible)
+    {% if modsecurity_enabled %}
+    modsecurity on;
+    modsecurity_rules_file /etc/nginx/modsec/main.conf;
+    {% endif %}
+
+    # Rate Limiting Zones
+    limit_req_zone $binary_remote_addr zone=login:10m rate=1r/s;
+    limit_req_zone $binary_remote_addr zone=api:10m rate=5r/s;
+    limit_req_zone $binary_remote_addr zone=global:10m rate=10r/s;
+
+    # Connection Limiting
+    limit_conn_zone $binary_remote_addr zone=addr:10m;
+
+    # FastCGI Cache
+    fastcgi_cache_path /var/cache/nginx/fastcgi levels=1:2 keys_zone=WORDPRESS:100m inactive=60m;
+    fastcgi_cache_key "$scheme$request_method$host$request_uri";
+    fastcgi_cache_use_stale error timeout invalid_header http_500;
+    fastcgi_ignore_headers Cache-Control Expires Set-Cookie;
+
+    # Gzip Settings
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types
+        text/plain
+        text/css
+        text/xml
+        text/javascript
+        application/json
+        application/javascript
+        application/xml+rss
+        application/atom+xml
+        image/svg+xml;
+
+    # Logging Format
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                   '$status $body_bytes_sent "$http_referer" '
+                   '"$http_user_agent" "$http_x_forwarded_for"'
+                   {% if modsecurity_enabled %} '$modsec_transaction_id'{% endif %};
+
+    access_log /var/log/nginx/access.log main;
+    error_log /var/log/nginx/error.log warn;
+
+    # Default Server Block
+    server {
+        listen 80 default_server;
+        listen [::]:80 default_server;
+        server_name _;
+        root /var/www/html;
+        index index.html index.htm index.nginx-debian.html;
+
+        # Basic security for admin paths
+        location ~* ^/(admin|wp-admin|administrator)/ {
+            {% if modsecurity_enabled %}
+            # ModSecurity rules may handle this, but add basic rate limiting
+            {% endif %}
+            limit_req zone=login burst=3 nodelay;
+            limit_conn addr 5;
+            
+            # Additional security headers for admin areas
+            add_header X-Frame-Options "DENY" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            
+            try_files $uri $uri/ =404;
+        }
+
+        # General rate limiting
+        location / {
+            limit_req zone=global burst=20 nodelay;
+            limit_conn addr 20;
+            try_files $uri $uri/ =404;
+        }
+
+        # Hide sensitive files
+        location ~* \.(htaccess|htpasswd|ini|log|sh|sql|conf|bak)$ {
+            deny all;
+        }
+
+        # Hide hidden files
+        location ~ /\. {
+            deny all;
+        }
+
+        # PHP handling (if needed)
+        location ~ \.php$ {
+            limit_req zone=api burst=10 nodelay;
+            
+            include snippets/fastcgi-php.conf;
+            fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
+            
+            # FastCGI cache settings
+            fastcgi_cache WORDPRESS;
+            fastcgi_cache_valid 200 60m;
+            fastcgi_cache_methods GET HEAD;
+            add_header X-FastCGI-Cache $upstream_cache_status;
+        }
+
+        # Static files optimization
+        location ~* \.(jpg|jpeg|png|gif|ico|css|js|pdf|txt)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+            add_header X-Content-Type-Options "nosniff";
+        }
+
+        # Error pages
+        error_page 404 /404.html;
+        error_page 500 502 503 504 /50x.html;
+    }
+
+    # Include additional configurations
+    include /etc/nginx/conf.d/*.conf;
+    include /etc/nginx/sites-enabled/*;
+}
+
+# Mail proxy (if needed)
+#mail {
+#    server_name mail.example.com;
+#    auth_http localhost/auth.php;
+#    proxy_pass_error_message on;
+#
+#    ssl_certificate /path/to/cert.pem;
+#    ssl_certificate_key /path/to/cert.key;
+#
+#    server {
+#        listen     993;
+#        protocol   imap;
+#        proxy      on;
+#        ssl        on;
+#    }
+#}

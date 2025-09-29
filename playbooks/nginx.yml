@@ -1,13 +1,22 @@
 ---
-- name: Nginx Installation/Uninstallation Playbook
+- name: Nginx 1.29.1 Installation/Uninstallation Playbook
   hosts: localhost
   connection: local
   become: yes
-  gather_facts: yes
-  
   vars:
-    nginx_action: "{{ action | default('install') }}"
-  
-  roles:
-    - role: nginx
-      when: nginx_action in ['install', 'uninstall']
+    nginx_user: "www-data"
+    nginx_worker_processes: "auto"
+    nginx_worker_connections: "1024"
+    nginx_keepalive_timeout: "30"
+    nginx_client_max_body_size: "64M"
+    nginx_server_tokens: "off"
+    modsecurity_enabled: "{{ modsecurity_enabled | default(false) }}"
+
+  tasks:
+    - name: Include install tasks
+      include_tasks: ../roles/nginx/tasks/install.yml
+      when: nginx_action is not defined or nginx_action == 'install'
+
+    - name: Include uninstall tasks
+      include_tasks: ../roles/nginx/tasks/uninstall.yml
+      when: nginx_action is defined and nginx_action == 'uninstall'

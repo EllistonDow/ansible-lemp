@@ -1,0 +1,376 @@
+---
+- name: Nginx 1.29.1 with ModSecurity Installation Playbook
+  hosts: localhost
+  connection: local
+  become: yes
+  vars:
+    nginx_version: "1.29.1"
+    nginx_user: "www-data"
+    nginx_worker_processes: "auto"
+    modsecurity_enabled: true
+    nginx_build_dir: "/usr/local/src"
+    nginx_config_dir: "/etc/nginx"
+    nginx_modules_dir: "/etc/nginx/modules"
+
+  tasks:
+    - name: Create build directory
+      file:
+        path: "{{ nginx_build_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install build dependencies
+      apt:
+        name:
+          - build-essential
+          - curl
+          - gnupg2
+          - ca-certificates
+          - lsb-release
+          - wget
+          - libpcre3-dev
+          - libssl-dev
+          - zlib1g-dev
+          - libxml2-dev
+          - libxslt1-dev
+          - libgd-dev
+          - libgeoip-dev
+          - libmodsecurity-dev
+          - libmodsecurity3
+          - modsecurity-crs
+          - git
+        state: present
+
+    - name: Remove existing nginx if present
+      block:
+        - name: Stop nginx service
+          systemd:
+            name: nginx
+            state: stopped
+          ignore_errors: yes
+
+        - name: Remove nginx packages
+          apt:
+            name:
+              - nginx
+              - nginx-common
+              - nginx-core
+            state: absent
+            purge: yes
+          ignore_errors: yes
+
+        - name: Remove nginx directories
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /etc/nginx
+            - /usr/sbin/nginx
+            - /var/log/nginx
+          ignore_errors: yes
+
+    - name: Download nginx {{ nginx_version }} source
+      get_url:
+        url: "https://nginx.org/download/nginx-{{ nginx_version }}.tar.gz"
+        dest: "{{ nginx_build_dir }}/nginx-{{ nginx_version }}.tar.gz"
+        mode: '0644'
+
+    - name: Extract nginx source
+      unarchive:
+        src: "{{ nginx_build_dir }}/nginx-{{ nginx_version }}.tar.gz"
+        dest: "{{ nginx_build_dir }}"
+        remote_src: yes
+        creates: "{{ nginx_build_dir }}/nginx-{{ nginx_version }}"
+
+    - name: Check if ModSecurity-nginx exists
+      stat:
+        path: "{{ nginx_build_dir }}/ModSecurity-nginx"
+      register: modsec_nginx_dir
+
+    - name: Clone ModSecurity-nginx connector
+      git:
+        repo: https://github.com/SpiderLabs/ModSecurity-nginx.git
+        dest: "{{ nginx_build_dir }}/ModSecurity-nginx"
+        depth: 1
+      when: not modsec_nginx_dir.stat.exists
+
+    - name: Configure nginx with ModSecurity
+      shell: |
+        cd {{ nginx_build_dir }}/nginx-{{ nginx_version }}
+        ./configure \
+          --prefix=/etc/nginx \
+          --sbin-path=/usr/sbin/nginx \
+          --modules-path={{ nginx_modules_dir }} \
+          --conf-path={{ nginx_config_dir }}/nginx.conf \
+          --error-log-path=/var/log/nginx/error.log \
+          --http-log-path=/var/log/nginx/access.log \
+          --pid-path=/run/nginx.pid \
+          --lock-path=/run/nginx.lock \
+          --http-client-body-temp-path=/var/cache/nginx/client_temp \
+          --http-proxy-temp-path=/var/cache/nginx/proxy_temp \
+          --http-fastcgi-temp-path=/var/cache/nginx/fastcgi_temp \
+          --http-uwsgi-temp-path=/var/cache/nginx/uwsgi_temp \
+          --http-scgi-temp-path=/var/cache/nginx/scgi_temp \
+          --user={{ nginx_user }} \
+          --group={{ nginx_user }} \
+          --with-compat \
+          --with-file-aio \
+          --with-threads \
+          --with-http_addition_module \
+          --with-http_auth_request_module \
+          --with-http_dav_module \
+          --with-http_flv_module \
+          --with-http_gunzip_module \
+          --with-http_gzip_static_module \
+          --with-http_mp4_module \
+          --with-http_random_index_module \
+          --with-http_realip_module \
+          --with-http_secure_link_module \
+          --with-http_slice_module \
+          --with-http_ssl_module \
+          --with-http_stub_status_module \
+          --with-http_sub_module \
+          --with-http_v2_module \
+          --with-mail \
+          --with-mail_ssl_module \
+          --with-stream \
+          --with-stream_realip_module \
+          --with-stream_ssl_module \
+          --with-stream_ssl_preread_module \
+          --without-pcre2 \
+          --with-pcre \
+          --with-pcre-jit \
+          --add-dynamic-module={{ nginx_build_dir }}/ModSecurity-nginx
+      args:
+        creates: "{{ nginx_build_dir }}/nginx-{{ nginx_version }}/objs/Makefile"
+
+    - name: Compile nginx
+      shell: |
+        cd {{ nginx_build_dir }}/nginx-{{ nginx_version }}
+        make -j$(nproc)
+      args:
+        creates: "{{ nginx_build_dir }}/nginx-{{ nginx_version }}/objs/nginx"
+
+    - name: Install nginx binary
+      copy:
+        src: "{{ nginx_build_dir }}/nginx-{{ nginx_version }}/objs/nginx"
+        dest: /usr/sbin/nginx
+        mode: '0755'
+        owner: root
+        group: root
+        remote_src: yes
+
+    - name: Create nginx directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - "{{ nginx_config_dir }}"
+        - "{{ nginx_modules_dir }}"
+        - /var/log/nginx
+        - /var/cache/nginx
+        - /var/cache/nginx/client_temp
+        - /var/cache/nginx/proxy_temp
+        - /var/cache/nginx/fastcgi_temp
+        - /var/cache/nginx/uwsgi_temp
+        - /var/cache/nginx/scgi_temp
+        - "{{ nginx_config_dir }}/conf.d"
+        - "{{ nginx_config_dir }}/sites-available"
+        - "{{ nginx_config_dir }}/sites-enabled"
+
+    - name: Install ModSecurity module
+      copy:
+        src: "{{ nginx_build_dir }}/nginx-{{ nginx_version }}/objs/ngx_http_modsecurity_module.so"
+        dest: "{{ nginx_modules_dir }}/ngx_http_modsecurity_module.so"
+        mode: '0755'
+        owner: root
+        group: root
+        remote_src: yes
+      when: modsecurity_enabled
+
+    - name: Create ModSecurity configuration directory
+      file:
+        path: "{{ nginx_config_dir }}/modsec"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: modsecurity_enabled
+
+    - name: Create ModSecurity main configuration
+      copy:
+        dest: "{{ nginx_config_dir }}/modsec/main.conf"
+        content: |
+          # ModSecurity configuration for nginx 1.29.1
+          Include /etc/modsecurity/modsecurity.conf
+          
+          # Include OWASP CRS setup
+          Include /etc/modsecurity/crs-setup.conf
+          
+          # Include OWASP CRS rules
+          Include /etc/modsecurity/rules/*.conf
+        owner: root
+        group: root
+        mode: '0644'
+      when: modsecurity_enabled
+
+    - name: Create ModSecurity configuration
+      copy:
+        dest: /etc/modsecurity/modsecurity.conf
+        content: |
+          # ModSecurity configuration for nginx 1.29.1
+          SecRuleEngine On
+          SecRequestBodyAccess On
+          SecRequestBodyLimit 13107200
+          SecRequestBodyNoFilesLimit 131072
+          SecRequestBodyInMemoryLimit 131072
+          SecRequestBodyLimitAction Reject
+          SecRule REQUEST_HEADERS:Content-Type "(?:application(?:/soap\+|/)|text/)xml" \
+               "id:'200000',phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=XML"
+          SecRule REQUEST_HEADERS:Content-Type "application/json" \
+               "id:'200001',phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"
+          SecRequestBodyJsonDepthLimit 512
+          SecResponseBodyAccess On
+          SecResponseBodyMimeType text/plain text/html text/xml
+          SecResponseBodyLimit 524288
+          SecResponseBodyLimitAction ProcessPartial
+          SecTmpDir /tmp/
+          SecDataDir /tmp/
+          SecAuditEngine RelevantOnly
+          SecAuditLogRelevantStatus "^(?:5|4(?!04))"
+          SecAuditLogParts ABIJDEFHZ
+          SecAuditLogType Serial
+          SecAuditLog /var/log/nginx/modsec_audit.log
+          SecArgumentSeparator &
+          SecCookieFormat 0
+          SecUnicodeMapFile unicode.mapping 20127
+          SecStatusEngine On
+        owner: root
+        group: root
+        mode: '0644'
+      when: modsecurity_enabled
+
+    - name: Setup OWASP CRS rules link
+      file:
+        src: /usr/share/modsecurity-crs/rules
+        dest: /etc/modsecurity/rules
+        state: link
+        force: yes
+      when: modsecurity_enabled
+
+    - name: Copy CRS setup configuration
+      copy:
+        src: /etc/modsecurity/crs/crs-setup.conf
+        dest: /etc/modsecurity/crs-setup.conf
+        remote_src: yes
+        owner: root
+        group: root
+        mode: '0644'
+      when: modsecurity_enabled
+      ignore_errors: yes
+
+    - name: Create main nginx configuration
+      template:
+        src: nginx_1291.conf.j2
+        dest: "{{ nginx_config_dir }}/nginx.conf"
+        owner: root
+        group: root
+        mode: '0644'
+        backup: yes
+
+    - name: Create nginx systemd service
+      copy:
+        dest: /etc/systemd/system/nginx.service
+        content: |
+          [Unit]
+          Description=nginx - high performance web server
+          Documentation=https://nginx.org/en/docs/
+          After=network-online.target remote-fs.target nss-lookup.target
+          Wants=network-online.target
+
+          [Service]
+          Type=forking
+          PIDFile=/run/nginx.pid
+          ExecStartPre=/usr/sbin/nginx -t
+          ExecStart=/usr/sbin/nginx
+          ExecReload=/bin/sh -c "/bin/kill -s HUP $(/bin/cat /run/nginx.pid)"
+          ExecStop=/bin/sh -c "/bin/kill -s TERM $(/bin/cat /run/nginx.pid)"
+
+          [Install]
+          WantedBy=multi-user.target
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Set nginx directory ownership
+      file:
+        path: /var/cache/nginx
+        state: directory
+        owner: "{{ nginx_user }}"
+        group: "{{ nginx_user }}"
+        recurse: yes
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Test nginx configuration
+      command: /usr/sbin/nginx -t
+      register: nginx_test_result
+
+    - name: Display nginx test result
+      debug:
+        msg: |
+          {% if nginx_test_result.rc == 0 %}
+          ✅ Nginx {{ nginx_version }} 配置测试成功！
+          
+          📋 安装详情：
+          - Nginx版本: {{ nginx_version }}
+          - ModSecurity: {{ 'Enabled' if modsecurity_enabled else 'Disabled' }}
+          - PCRE: 强制使用PCRE (非PCRE2)
+          - 模块目录: {{ nginx_modules_dir }}
+          
+          🔧 下一步：
+          - 启动服务: sudo systemctl start nginx
+          - 启用开机启动: sudo systemctl enable nginx
+          - 配置ModSecurity级别: /home/doge/ansible-lemp/scripts/toggle-modsecurity.sh [0-10]
+          {% else %}
+          ❌ Nginx配置测试失败
+          错误信息: {{ nginx_test_result.stderr }}
+          {% endif %}
+
+    - name: Start and enable nginx
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+      when: nginx_test_result.rc == 0
+
+    - name: Display final status
+      debug:
+        msg: |
+          🎉 Nginx {{ nginx_version }} 安装完成！
+          
+          📊 状态检查：
+          - 配置文件: {{ nginx_config_dir }}/nginx.conf
+          - 模块目录: {{ nginx_modules_dir }}
+          - 日志目录: /var/log/nginx
+          - 缓存目录: /var/cache/nginx
+          
+          🔧 管理命令：
+          - 测试配置: sudo nginx -t
+          - 重新加载: sudo systemctl reload nginx
+          - 查看状态: sudo systemctl status nginx
+          - 查看日志: sudo tail -f /var/log/nginx/error.log
+          
+          📖 ModSecurity控制：
+          - Toggle脚本: /home/doge/ansible-lemp/scripts/toggle-modsecurity.sh
+          - 配置文件: {{ nginx_config_dir }}/modsec/main.conf
+      when: nginx_test_result.rc == 0
