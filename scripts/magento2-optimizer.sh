@@ -298,7 +298,7 @@ events {
 
 http {
 
-    # ModSecurity Configuration
+    # ModSecurity Configuration (Level 1 - Magento2 Optimized)
     modsecurity on;
     modsecurity_rules_file /etc/nginx/modsec/main.conf;
     # Basic Settings
@@ -384,7 +384,18 @@ EOF
     sudo mkdir -p /var/cache/nginx/fastcgi
     sudo chown -R www-data:www-data /var/cache/nginx/
     
+    # 自动设置ModSecurity为级别1 (Magento2优化)
+    echo -e "  ${GEAR} 设置ModSecurity为Magento2优化级别..."
+    if [[ -f "./scripts/toggle-modsecurity.sh" ]]; then
+        ./scripts/toggle-modsecurity.sh 1 > /dev/null 2>&1 || {
+            echo -e "  ${WARNING_MARK} ModSecurity级别设置失败，请手动运行: ./scripts/toggle-modsecurity.sh 1"
+        }
+    else
+        echo -e "  ${WARNING_MARK} 未找到toggle-modsecurity.sh，请手动设置ModSecurity级别1"
+    fi
+    
     echo -e "  ${CHECK_MARK} Nginx配置已优化 (支持Magento2缓存、高并发和ModSecurity WAF防护)"
+    echo -e "  ${INFO_MARK} ModSecurity已设置为级别1 (适合Magento2生产环境)"
 }
 
 optimize_valkey() {
@@ -681,6 +692,11 @@ optimize_all() {
     echo -e "  • 配置Varnish作为全页缓存"
     echo -e "  • 定期运行 magento setup:di:compile"
     echo -e "  • 重建OpenSearch索引: magento indexer:reindex catalogsearch_fulltext"
+    echo
+    echo -e "${INFO_MARK} ${YELLOW}ModSecurity级别说明:${NC}"
+    echo -e "  • 当前级别1: 极低敏感度，适合Magento2生产环境"
+    echo -e "  • 如需调整: ./scripts/toggle-modsecurity.sh [0-10]"
+    echo -e "  • 后台菜单问题: 确保级别设置为1-2"
     echo
 }
 
