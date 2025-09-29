@@ -48,13 +48,27 @@ print_header() {
 
 print_help() {
     print_header
-    echo -e "${CYAN}用法: $0 [选项]${NC}"
+    echo -e "${CYAN}用法: $0 [选项] [服务名]${NC}"
     echo
-    echo -e "${YELLOW}选项:${NC}"
-    echo -e "  ${GREEN}optimize${NC}  - 应用Magento2性能优化配置"
-    echo -e "  ${GREEN}restore${NC}   - 还原到原始配置"
-    echo -e "  ${GREEN}status${NC}    - 显示当前优化状态"
-    echo -e "  ${GREEN}help${NC}      - 显示此帮助信息"
+    echo -e "${YELLOW}基本选项:${NC}"
+    echo -e "  ${GREEN}optimize${NC}         - 应用Magento2性能优化配置"
+    echo -e "  ${GREEN}restore${NC}          - 还原到原始配置"
+    echo -e "  ${GREEN}status${NC}           - 显示当前优化状态"
+    echo -e "  ${GREEN}help${NC}             - 显示此帮助信息"
+    echo
+    echo -e "${YELLOW}单独优化选项:${NC}"
+    echo -e "  ${GREEN}optimize mysql${NC}   - 仅优化MySQL配置"
+    echo -e "  ${GREEN}optimize php${NC}     - 仅优化PHP-FPM配置"
+    echo -e "  ${GREEN}optimize nginx${NC}   - 仅优化Nginx配置"
+    echo -e "  ${GREEN}optimize valkey${NC}  - 仅优化Valkey配置"
+    echo -e "  ${GREEN}optimize opensearch${NC} - 仅优化OpenSearch配置"
+    echo
+    echo -e "${YELLOW}单独还原选项:${NC}"
+    echo -e "  ${GREEN}restore mysql${NC}    - 仅还原MySQL配置"
+    echo -e "  ${GREEN}restore php${NC}      - 仅还原PHP-FPM配置"
+    echo -e "  ${GREEN}restore nginx${NC}    - 仅还原Nginx配置"
+    echo -e "  ${GREEN}restore valkey${NC}   - 仅还原Valkey配置"
+    echo -e "  ${GREEN}restore opensearch${NC} - 仅还原OpenSearch配置"
     echo
     echo -e "${YELLOW}功能说明:${NC}"
     echo -e "  • MySQL优化: 针对Magento2的数据库性能调优"
@@ -62,6 +76,12 @@ print_help() {
     echo -e "  • Nginx优化: 缓存和连接优化"
     echo -e "  • Valkey优化: 会话和缓存存储优化"
     echo -e "  • OpenSearch优化: 产品搜索和索引性能优化"
+    echo
+    echo -e "${YELLOW}示例:${NC}"
+    echo -e "  $0 optimize nginx     # 仅优化nginx配置"
+    echo -e "  $0 restore nginx      # 仅还原nginx配置"
+    echo -e "  $0 optimize           # 优化所有服务"
+    echo -e "  $0 restore            # 还原所有服务"
     echo
 }
 
@@ -565,6 +585,75 @@ show_optimization_status() {
     echo
 }
 
+# 单独优化MySQL配置
+optimize_mysql_only() {
+    print_header
+    echo -e "${ROCKET} ${GREEN}开始优化MySQL配置...${NC}"
+    echo
+    optimize_mysql
+    echo
+    echo -e "${INFO_MARK} ${YELLOW}重启MySQL服务...${NC}"
+    sudo systemctl restart mysql && echo -e "  ${CHECK_MARK} MySQL已重启"
+    echo
+    echo -e "${CHECK_MARK} ${GREEN}MySQL优化完成！${NC}"
+}
+
+# 单独优化PHP配置
+optimize_php_only() {
+    print_header
+    echo -e "${ROCKET} ${GREEN}开始优化PHP配置...${NC}"
+    echo
+    optimize_php_fpm
+    echo
+    echo -e "${INFO_MARK} ${YELLOW}重启PHP-FPM服务...${NC}"
+    sudo systemctl restart php8.3-fpm && echo -e "  ${CHECK_MARK} PHP-FPM已重启"
+    echo
+    echo -e "${CHECK_MARK} ${GREEN}PHP优化完成！${NC}"
+}
+
+# 单独优化Nginx配置
+optimize_nginx_only() {
+    print_header
+    echo -e "${ROCKET} ${GREEN}开始优化Nginx配置...${NC}"
+    echo
+    optimize_nginx
+    echo
+    echo -e "${INFO_MARK} ${YELLOW}测试并重启Nginx服务...${NC}"
+    if sudo nginx -t; then
+        sudo systemctl restart nginx && echo -e "  ${CHECK_MARK} Nginx已重启"
+        echo -e "${CHECK_MARK} ${GREEN}Nginx优化完成！${NC}"
+    else
+        echo -e "  ${CROSS_MARK} ${RED}Nginx配置测试失败${NC}"
+    fi
+}
+
+# 单独优化Valkey配置
+optimize_valkey_only() {
+    print_header
+    echo -e "${ROCKET} ${GREEN}开始优化Valkey配置...${NC}"
+    echo
+    optimize_valkey
+    echo
+    echo -e "${INFO_MARK} ${YELLOW}重启Valkey服务...${NC}"
+    sudo systemctl restart valkey && echo -e "  ${CHECK_MARK} Valkey已重启"
+    echo
+    echo -e "${CHECK_MARK} ${GREEN}Valkey优化完成！${NC}"
+}
+
+# 单独优化OpenSearch配置
+optimize_opensearch_only() {
+    print_header
+    echo -e "${ROCKET} ${GREEN}开始优化OpenSearch配置...${NC}"
+    echo
+    optimize_opensearch
+    echo
+    echo -e "${INFO_MARK} ${YELLOW}重启OpenSearch服务...${NC}"
+    sudo systemctl daemon-reload
+    sudo systemctl restart opensearch && echo -e "  ${CHECK_MARK} OpenSearch已重启"
+    echo
+    echo -e "${CHECK_MARK} ${GREEN}OpenSearch优化完成！${NC}"
+}
+
 optimize_all() {
     print_header
     echo -e "${ROCKET} ${GREEN}开始应用Magento2性能优化...${NC}"
@@ -593,6 +682,88 @@ optimize_all() {
     echo -e "  • 定期运行 magento setup:di:compile"
     echo -e "  • 重建OpenSearch索引: magento indexer:reindex catalogsearch_fulltext"
     echo
+}
+
+# 单独还原MySQL配置
+restore_mysql() {
+    echo -e "${WARNING_MARK} ${YELLOW}还原MySQL配置...${NC}"
+    if restore_backup "$MYSQL_CONFIG" "mysqld.cnf"; then
+        sudo systemctl restart mysql
+        echo -e "${CHECK_MARK} ${GREEN}MySQL配置已还原并重启服务${NC}"
+    else
+        echo -e "${CROSS_MARK} ${RED}MySQL配置还原失败${NC}"
+    fi
+}
+
+# 单独还原PHP配置
+restore_php() {
+    echo -e "${WARNING_MARK} ${YELLOW}还原PHP配置...${NC}"
+    local restore_count=0
+    restore_backup "$PHP_FPM_CONFIG" "www.conf" && ((restore_count++))
+    restore_backup "$PHP_FPM_INI_CONFIG" "php-fpm.ini" && ((restore_count++))
+    restore_backup "$PHP_CLI_INI_CONFIG" "php-cli.ini" && ((restore_count++))
+    
+    if [[ $restore_count -gt 0 ]]; then
+        sudo systemctl restart php8.3-fpm
+        echo -e "${CHECK_MARK} ${GREEN}PHP配置已还原并重启服务${NC}"
+    else
+        echo -e "${CROSS_MARK} ${RED}PHP配置还原失败${NC}"
+    fi
+}
+
+# 单独还原Nginx配置
+restore_nginx() {
+    echo -e "${WARNING_MARK} ${YELLOW}还原Nginx配置...${NC}"
+    if restore_backup "$NGINX_CONFIG" "nginx.conf"; then
+        echo -e "${INFO_MARK} ${YELLOW}测试Nginx配置...${NC}"
+        if sudo nginx -t; then
+            sudo systemctl restart nginx
+            echo -e "${CHECK_MARK} ${GREEN}Nginx配置已还原并重启服务${NC}"
+        else
+            echo -e "${WARNING_MARK} ${YELLOW}Nginx配置测试失败，可能是站点配置与主配置不兼容${NC}"
+            echo -e "${INFO_MARK} ${CYAN}建议检查以下问题:${NC}"
+            echo -e "  • 站点配置是否使用了ModSecurity指令但主配置未加载模块"
+            echo -e "  • 站点配置是否使用了FastCGI缓存但主配置未定义缓存路径"
+            echo -e "${INFO_MARK} ${YELLOW}尝试重新加载配置...${NC}"
+            if sudo nginx -t 2>&1 | grep -q "modsecurity"; then
+                echo -e "  ${INFO_MARK} 检测到ModSecurity相关错误，建议运行:"
+                echo -e "    ${GREEN}./scripts/fix-modsecurity-admin.sh${NC}"
+            fi
+            if sudo nginx -t 2>&1 | grep -q "fastcgi_cache"; then
+                echo -e "  ${INFO_MARK} 检测到FastCGI缓存相关错误，建议检查缓存配置"
+            fi
+            echo -e "${CROSS_MARK} ${RED}Nginx配置还原后测试失败，请手动检查配置${NC}"
+        fi
+    else
+        echo -e "${CROSS_MARK} ${RED}Nginx配置还原失败${NC}"
+    fi
+}
+
+# 单独还原Valkey配置
+restore_valkey() {
+    echo -e "${WARNING_MARK} ${YELLOW}还原Valkey配置...${NC}"
+    if restore_backup "$VALKEY_CONFIG" "valkey.conf"; then
+        sudo systemctl restart valkey
+        echo -e "${CHECK_MARK} ${GREEN}Valkey配置已还原并重启服务${NC}"
+    else
+        echo -e "${CROSS_MARK} ${RED}Valkey配置还原失败${NC}"
+    fi
+}
+
+# 单独还原OpenSearch配置
+restore_opensearch() {
+    echo -e "${WARNING_MARK} ${YELLOW}还原OpenSearch配置...${NC}"
+    local restore_count=0
+    restore_backup "$OPENSEARCH_CONFIG" "opensearch.yml" && ((restore_count++))
+    restore_backup "$OPENSEARCH_JVM_CONFIG" "jvm.options" && ((restore_count++))
+    
+    if [[ $restore_count -gt 0 ]]; then
+        sudo systemctl daemon-reload
+        sudo systemctl restart opensearch
+        echo -e "${CHECK_MARK} ${GREEN}OpenSearch配置已还原并重启服务${NC}"
+    else
+        echo -e "${CROSS_MARK} ${RED}OpenSearch配置还原失败${NC}"
+    fi
 }
 
 restore_all() {
@@ -627,10 +798,62 @@ restore_all() {
 main() {
     case "${1:-help}" in
         "optimize")
-            optimize_all
+            case "${2}" in
+                "mysql")
+                    optimize_mysql_only
+                    ;;
+                "php")
+                    optimize_php_only
+                    ;;
+                "nginx")
+                    optimize_nginx_only
+                    ;;
+                "valkey")
+                    optimize_valkey_only
+                    ;;
+                "opensearch")
+                    optimize_opensearch_only
+                    ;;
+                "")
+                    optimize_all
+                    ;;
+                *)
+                    echo -e "${RED}错误: 未知的优化选项 '$2'${NC}"
+                    echo -e "${YELLOW}支持的选项: mysql, php, nginx, valkey, opensearch${NC}"
+                    echo
+                    print_help
+                    exit 1
+                    ;;
+            esac
             ;;
         "restore")
-            restore_all
+            case "${2}" in
+                "mysql")
+                    restore_mysql
+                    ;;
+                "php")
+                    restore_php
+                    ;;
+                "nginx")
+                    restore_nginx
+                    ;;
+                "valkey")
+                    restore_valkey
+                    ;;
+                "opensearch")
+                    restore_opensearch
+                    ;;
+                "")
+                    restore_all
+                    ;;
+                *)
+                    echo -e "${RED}错误: 未知的还原选项 '$2'${NC}"
+                    echo -e "${YELLOW}支持的选项: mysql, php, nginx, valkey, opensearch${NC}"
+                    echo
+                    print_help
+                    exit 1
+                    ;;
+            esac
             ;;
         "status")
             print_header
