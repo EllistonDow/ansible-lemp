@@ -1,4 +1,4 @@
-# Ansible LEMP Stack v1.8.6
+# Ansible LEMP Stack v1.8.7
 
 A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
 
@@ -188,6 +188,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Star the repository if it helps you! ⭐
 
 ## 🔄 Version History
+
+- **v1.8.7** - Magento Mode Display in Deployment Scripts (2025-10-01)
+  - 📊 Show current Magento mode before deployment
+  - 📋 Display mode again after deployment for verification
+  - 🎯 Command: `php bin/magento deploy:mode:show`
+  - ✅ Helps identify production/developer/default mode
+  - 🔍 Better deployment transparency and debugging
 
 - **v1.8.6** - Sudo-Free Magento Deployment Script (2025-10-01)
   - 🚀 New script: magento-deploy-simple.sh (no sudo required)
