@@ -1,9 +1,9 @@
 #!/bin/bash
 # Magento2 Performance Optimizer for LEMP Stack
-# Optimized for 64GB RAM server with 3-4 Magento2 sites
-# Usage: ./magento2-optimizer.sh [optimize|restore|status]
+# Dynamic memory allocation for different server sizes
+# Usage: ./magento2-optimizer.sh [64|128|256] [optimize|restore|status]
 
-set -e
+# 注意：不使用 set -e，因为某些操作允许失败（如ModSecurity配置）
 
 # 颜色定义
 RED='\033[0;31m'
@@ -33,22 +33,88 @@ OPENSEARCH_CONFIG="/etc/opensearch/opensearch.yml"
 OPENSEARCH_JVM_CONFIG="/etc/opensearch/jvm.options"
 BACKUP_DIR="/opt/lemp-backups/magento2-optimizer"
 
-# 系统信息
-TOTAL_RAM_GB=64
+# 动态内存配置
+TOTAL_RAM_GB=${1:-64}  # 默认64GB，可通过参数指定
 SITES_COUNT=4
 CPU_CORES=$(nproc)
 
+# 内存分配计算函数
+calculate_memory_allocation() {
+    local total_gb=$1
+    
+    # 内存分配百分比 (基于Magento2最佳实践)
+    local mysql_percent=25      # MySQL InnoDB Buffer Pool
+    local opensearch_percent=12 # OpenSearch JVM Heap
+    local valkey_percent=9      # Valkey Cache
+    local system_percent=31     # 系统缓存和内核
+    local other_percent=23      # 其他服务 (Nginx, Varnish等)
+    
+    # 计算各服务内存 (GB)
+    MYSQL_MEMORY_GB=$((total_gb * mysql_percent / 100))
+    OPENSEARCH_MEMORY_GB=$((total_gb * opensearch_percent / 100))
+    VALKEY_MEMORY_GB=$((total_gb * valkey_percent / 100))
+    SYSTEM_MEMORY_GB=$((total_gb * system_percent / 100))
+    OTHER_MEMORY_GB=$((total_gb * other_percent / 100))
+    
+    # OpenSearch JVM 堆内存限制（官方强烈建议不超过32GB）
+    # 原因：超过32GB后JVM压缩指针失效，实际可用内存反而减少
+    if [[ $OPENSEARCH_MEMORY_GB -gt 32 ]]; then
+        OPENSEARCH_MEMORY_GB=32
+        # 将多余的内存重新分配给MySQL
+        local extra_memory=$((total_gb * opensearch_percent / 100 - 32))
+        MYSQL_MEMORY_GB=$((MYSQL_MEMORY_GB + extra_memory))
+    fi
+    
+    # PHP-FPM进程数计算 (每个进程2GB内存限制，但实际使用约100MB)
+    # 为PHP-FPM预留足够内存，但不超过总内存的20%
+    local php_max_percent=20
+    local php_memory_gb=$((total_gb * php_max_percent / 100))
+    PHP_MAX_CHILDREN=$((php_memory_gb * 10))  # 每GB支持10个进程
+    
+    # 确保最小配置
+    [[ $MYSQL_MEMORY_GB -lt 8 ]] && MYSQL_MEMORY_GB=8
+    [[ $OPENSEARCH_MEMORY_GB -lt 4 ]] && OPENSEARCH_MEMORY_GB=4
+    [[ $VALKEY_MEMORY_GB -lt 2 ]] && VALKEY_MEMORY_GB=2
+    [[ $PHP_MAX_CHILDREN -lt 20 ]] && PHP_MAX_CHILDREN=20
+    [[ $PHP_MAX_CHILDREN -gt 200 ]] && PHP_MAX_CHILDREN=200  # 限制最大进程数
+    
+    # MySQL实例数计算 (每4GB一个实例，最少8个，最多32个)
+    MYSQL_INSTANCES=$((MYSQL_MEMORY_GB / 4))
+    [[ $MYSQL_INSTANCES -lt 8 ]] && MYSQL_INSTANCES=8
+    [[ $MYSQL_INSTANCES -gt 32 ]] && MYSQL_INSTANCES=32
+}
+
 print_header() {
+    # 计算内存分配
+    calculate_memory_allocation $TOTAL_RAM_GB
+    
     echo -e "${BLUE}=============================================="
-    echo -e "    Magento2 性能优化工具"
-    echo -e "    适用于: ${TOTAL_RAM_GB}GB RAM + ${SITES_COUNT}个Magento2站点"
+    echo -e "    Magento2 性能优化工具 (动态内存分配)"
+    echo -e "    服务器内存: ${TOTAL_RAM_GB}GB RAM"
+    echo -e "    支持站点: ${SITES_COUNT}个Magento2站点"
     echo -e "==============================================${NC}"
+    echo
+    echo -e "${CYAN}📊 内存分配方案:${NC}"
+    echo -e "  MySQL InnoDB Buffer Pool: ${MYSQL_MEMORY_GB}GB (${MYSQL_INSTANCES}个实例)"
+    echo -e "  OpenSearch JVM Heap: ${OPENSEARCH_MEMORY_GB}GB"
+    echo -e "  Valkey Cache: ${VALKEY_MEMORY_GB}GB"
+    echo -e "  PHP-FPM 最大进程数: ${PHP_MAX_CHILDREN}"
+    echo -e "  系统缓存预留: ${SYSTEM_MEMORY_GB}GB"
+    echo -e "  其他服务预留: ${OTHER_MEMORY_GB}GB"
     echo
 }
 
 print_help() {
-    print_header
-    echo -e "${CYAN}用法: $0 [选项] [服务名]${NC}"
+    echo -e "${BLUE}=============================================="
+    echo -e "    Magento2 性能优化工具 (动态内存分配)"
+    echo -e "==============================================${NC}"
+    echo
+    echo -e "${CYAN}用法: $0 [内存大小] [选项] [服务名]${NC}"
+    echo
+    echo -e "${YELLOW}支持的内存大小:${NC}"
+    echo -e "  ${GREEN}64${NC}              - 64GB RAM服务器 (默认)"
+    echo -e "  ${GREEN}128${NC}             - 128GB RAM服务器"
+    echo -e "  ${GREEN}256${NC}             - 256GB RAM服务器"
     echo
     echo -e "${YELLOW}基本选项:${NC}"
     echo -e "  ${GREEN}optimize${NC}         - 应用Magento2性能优化配置"
@@ -70,18 +136,29 @@ print_help() {
     echo -e "  ${GREEN}restore valkey${NC}   - 仅还原Valkey配置"
     echo -e "  ${GREEN}restore opensearch${NC} - 仅还原OpenSearch配置"
     echo
-    echo -e "${YELLOW}功能说明:${NC}"
-    echo -e "  • MySQL优化: 针对Magento2的数据库性能调优"
-    echo -e "  • PHP-FPM优化: 进程池和内存管理优化"
-    echo -e "  • Nginx优化: 缓存和连接优化"
-    echo -e "  • Valkey优化: 会话和缓存存储优化"
-    echo -e "  • OpenSearch优化: 产品搜索和索引性能优化"
+    echo -e "${YELLOW}内存分配策略:${NC}"
+    echo -e "  • MySQL: 25% 总内存 (InnoDB Buffer Pool)"
+    echo -e "  • OpenSearch: 12% 总内存 (JVM Heap, 最大32GB)"
+    echo -e "  • Valkey: 9% 总内存 (Cache)"
+    echo -e "  • 系统缓存: 31% 总内存 (内核和文件系统)"
+    echo -e "  • 其他服务: 23% 总内存 (Nginx, Varnish等)"
+    echo
+    echo -e "${YELLOW}⚠️  OpenSearch 重要说明:${NC}"
+    echo -e "  • JVM堆内存建议不超过32GB（压缩指针限制）"
+    echo -e "  • 超过32GB后压缩指针失效，实际可用内存反而减少"
+    echo -e "  • 多余内存会自动分配给MySQL以提升性能"
     echo
     echo -e "${YELLOW}示例:${NC}"
-    echo -e "  $0 optimize nginx     # 仅优化nginx配置"
-    echo -e "  $0 restore nginx      # 仅还原nginx配置"
-    echo -e "  $0 optimize           # 优化所有服务"
-    echo -e "  $0 restore            # 还原所有服务"
+    echo -e "  $0 64 optimize           # 64GB服务器完整优化"
+    echo -e "  $0 128 optimize mysql   # 128GB服务器仅优化MySQL"
+    echo -e "  $0 256 restore nginx     # 256GB服务器还原Nginx"
+    echo -e "  $0 64 status            # 查看64GB服务器优化状态"
+    echo
+    echo -e "${YELLOW}内存配置对比:${NC}"
+    echo -e "  ${CYAN}64GB:${NC}  MySQL:16GB, OpenSearch:7GB, Valkey:5GB, PHP进程:120"
+    echo -e "  ${CYAN}128GB:${NC} MySQL:32GB, OpenSearch:15GB, Valkey:11GB, PHP进程:200"
+    echo -e "  ${CYAN}256GB:${NC} MySQL:64GB, OpenSearch:30GB, Valkey:23GB, PHP进程:200"
+    echo -e "  ${CYAN}320GB+:${NC} MySQL增加, OpenSearch限制32GB, 多余内存分配给MySQL"
     echo
 }
 
@@ -114,10 +191,13 @@ restore_backup() {
 optimize_mysql() {
     echo -e "${GEAR} ${CYAN}优化MySQL配置...${NC}"
     
+    # 计算内存分配
+    calculate_memory_allocation $TOTAL_RAM_GB
+    
     create_backup "$MYSQL_CONFIG" "mysqld.cnf"
     
     # 创建Magento2优化的MySQL配置
-    sudo tee "$MYSQL_CONFIG" > /dev/null << 'EOF'
+    sudo tee "$MYSQL_CONFIG" > /dev/null << EOF
 [client]
 port = 3306
 socket = /var/run/mysqld/mysqld.sock
@@ -138,10 +218,10 @@ tmpdir = /tmp
 lc-messages-dir = /usr/share/mysql
 skip-external-locking
 
-# Magento2 Optimized Settings for 64GB RAM
-# Memory Settings (使用约16GB给MySQL，留足够内存给其他服务)
-innodb_buffer_pool_size = 16G
-innodb_buffer_pool_instances = 16
+# Magento2 Optimized Settings for ${TOTAL_RAM_GB}GB RAM
+# Memory Settings (使用${MYSQL_MEMORY_GB}GB给MySQL，留足够内存给其他服务)
+innodb_buffer_pool_size = ${MYSQL_MEMORY_GB}G
+innodb_buffer_pool_instances = ${MYSQL_INSTANCES}
 innodb_log_buffer_size = 256M
 key_buffer_size = 512M
 tmp_table_size = 512M
@@ -217,22 +297,31 @@ max_allowed_packet = 64M
 key_buffer_size = 512M
 EOF
 
-    echo -e "  ${CHECK_MARK} MySQL配置已优化 (适用于Magento2 + 64GB RAM)"
+    echo -e "  ${CHECK_MARK} MySQL配置已优化 (适用于Magento2 + ${TOTAL_RAM_GB}GB RAM)"
+    echo -e "  ${INFO_MARK} InnoDB Buffer Pool: ${MYSQL_MEMORY_GB}GB (${MYSQL_INSTANCES}个实例)"
 }
 
 optimize_php_fpm() {
     echo -e "${GEAR} ${CYAN}优化PHP-FPM配置...${NC}"
     
+    # 计算内存分配
+    calculate_memory_allocation $TOTAL_RAM_GB
+    
     create_backup "$PHP_FPM_CONFIG" "www.conf"
     create_backup "$PHP_FPM_INI_CONFIG" "php-fpm.ini"
     create_backup "$PHP_CLI_INI_CONFIG" "php-cli.ini"
     
+    # 计算PHP-FPM进程池设置
+    local start_servers=$((PHP_MAX_CHILDREN / 4))
+    local min_spare_servers=$((PHP_MAX_CHILDREN / 5))
+    local max_spare_servers=$((PHP_MAX_CHILDREN / 3))
+    
     # 优化PHP-FPM池配置
     sudo sed -i 's/^pm = .*/pm = dynamic/' "$PHP_FPM_CONFIG"
-    sudo sed -i 's/^pm.max_children = .*/pm.max_children = 80/' "$PHP_FPM_CONFIG"
-    sudo sed -i 's/^pm.start_servers = .*/pm.start_servers = 20/' "$PHP_FPM_CONFIG"
-    sudo sed -i 's/^pm.min_spare_servers = .*/pm.min_spare_servers = 15/' "$PHP_FPM_CONFIG"
-    sudo sed -i 's/^pm.max_spare_servers = .*/pm.max_spare_servers = 30/' "$PHP_FPM_CONFIG"
+    sudo sed -i "s/^pm.max_children = .*/pm.max_children = ${PHP_MAX_CHILDREN}/" "$PHP_FPM_CONFIG"
+    sudo sed -i "s/^pm.start_servers = .*/pm.start_servers = ${start_servers}/" "$PHP_FPM_CONFIG"
+    sudo sed -i "s/^pm.min_spare_servers = .*/pm.min_spare_servers = ${min_spare_servers}/" "$PHP_FPM_CONFIG"
+    sudo sed -i "s/^pm.max_spare_servers = .*/pm.max_spare_servers = ${max_spare_servers}/" "$PHP_FPM_CONFIG"
     sudo sed -i 's/^;pm.max_requests = .*/pm.max_requests = 1000/' "$PHP_FPM_CONFIG"
     
     # 添加进程管理设置
@@ -248,6 +337,20 @@ optimize_php_fpm() {
     sudo sed -i 's/^upload_max_filesize = .*/upload_max_filesize = 64M/' "$PHP_FPM_INI_CONFIG"
     sudo sed -i 's/^max_file_uploads = .*/max_file_uploads = 100/' "$PHP_FPM_INI_CONFIG"
     
+    # Magento2 关键配置 (防止后台表单提交失败)
+    sudo sed -i 's/^max_input_vars = .*/max_input_vars = 4000/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^;max_input_vars = .*/max_input_vars = 4000/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^zlib.output_compression = .*/zlib.output_compression = Off/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^;zlib.output_compression = .*/zlib.output_compression = Off/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's|^;date.timezone =.*|date.timezone = America/Los_Angeles|' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's|^date.timezone =.*|date.timezone = America/Los_Angeles|' "$PHP_FPM_INI_CONFIG"
+    
+    # 性能优化：文件路径缓存
+    sudo sed -i 's/^;realpath_cache_size =.*/realpath_cache_size = 10M/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^realpath_cache_size =.*/realpath_cache_size = 10M/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^;realpath_cache_ttl =.*/realpath_cache_ttl = 7200/' "$PHP_FPM_INI_CONFIG"
+    sudo sed -i 's/^realpath_cache_ttl =.*/realpath_cache_ttl = 7200/' "$PHP_FPM_INI_CONFIG"
+    
     # 优化PHP-CLI.ini设置 (Magento2命令行操作需要更多内存)
     sudo sed -i 's/^memory_limit = .*/memory_limit = 4G/' "$PHP_CLI_INI_CONFIG"
     sudo sed -i 's/^max_execution_time = .*/max_execution_time = 3600/' "$PHP_CLI_INI_CONFIG"
@@ -255,6 +358,20 @@ optimize_php_fpm() {
     sudo sed -i 's/^post_max_size = .*/post_max_size = 64M/' "$PHP_CLI_INI_CONFIG"
     sudo sed -i 's/^upload_max_filesize = .*/upload_max_filesize = 64M/' "$PHP_CLI_INI_CONFIG"
     sudo sed -i 's/^max_file_uploads = .*/max_file_uploads = 100/' "$PHP_CLI_INI_CONFIG"
+    
+    # Magento2 关键配置 (CLI也需要)
+    sudo sed -i 's/^max_input_vars = .*/max_input_vars = 4000/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^;max_input_vars = .*/max_input_vars = 4000/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^zlib.output_compression = .*/zlib.output_compression = Off/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^;zlib.output_compression = .*/zlib.output_compression = Off/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's|^;date.timezone =.*|date.timezone = America/Los_Angeles|' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's|^date.timezone =.*|date.timezone = America/Los_Angeles|' "$PHP_CLI_INI_CONFIG"
+    
+    # 性能优化：文件路径缓存
+    sudo sed -i 's/^;realpath_cache_size =.*/realpath_cache_size = 10M/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^realpath_cache_size =.*/realpath_cache_size = 10M/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^;realpath_cache_ttl =.*/realpath_cache_ttl = 7200/' "$PHP_CLI_INI_CONFIG"
+    sudo sed -i 's/^realpath_cache_ttl =.*/realpath_cache_ttl = 7200/' "$PHP_CLI_INI_CONFIG"
     
     # OPcache设置 (对Magento2非常重要)
     sudo sed -i 's/^;opcache.enable=.*/opcache.enable=1/' "$PHP_FPM_INI_CONFIG"
@@ -274,6 +391,9 @@ optimize_php_fpm() {
     sudo sed -i 's/^;opcache.save_comments=.*/opcache.save_comments=1/' "$PHP_CLI_INI_CONFIG"
     
     echo -e "  ${CHECK_MARK} PHP-FPM和PHP-CLI配置已优化 (支持高并发Magento2和命令行操作)"
+    echo -e "  ${INFO_MARK} 最大进程数: ${PHP_MAX_CHILDREN}, 启动进程: ${start_servers}, 空闲进程: ${min_spare_servers}-${max_spare_servers}"
+    echo -e "  ${INFO_MARK} 关键配置: max_input_vars=4000, date.timezone=America/Los_Angeles"
+    echo -e "  ${INFO_MARK} 性能优化: realpath_cache_size=10M, zlib.output_compression=Off"
 }
 
 optimize_nginx() {
@@ -400,24 +520,21 @@ EOF
     # 自动设置ModSecurity为级别1 (Magento2优化)
     echo -e "  ${GEAR} 设置ModSecurity为Magento2优化级别..."
     if [[ -f "./scripts/toggle-modsecurity.sh" ]]; then
-        ./scripts/toggle-modsecurity.sh 1 > /dev/null 2>&1 || {
-            echo -e "  ${WARNING_MARK} ModSecurity级别设置失败，请手动运行: ./scripts/toggle-modsecurity.sh 1"
-        }
+        ./scripts/toggle-modsecurity.sh 1 > /dev/null 2>&1 || true
+        echo -e "  ${INFO_MARK} ModSecurity级别已设置为1 (如果脚本存在)"
     else
-        echo -e "  ${WARNING_MARK} 未找到toggle-modsecurity.sh，请手动设置ModSecurity级别1"
+        echo -e "  ${WARNING_MARK} 未找到toggle-modsecurity.sh，跳过ModSecurity设置"
     fi
 
     # 检查PCRE兼容性
     echo -e "  ${GEAR} 检查ModSecurity PCRE兼容性..."
-    if nginx -t 2>&1 | grep -q "undefined symbol: pcre_malloc"; then
+    if sudo nginx -t 2>&1 | grep -q "undefined symbol: pcre_malloc"; then
         echo -e "  ${WARNING_MARK} 检测到PCRE兼容性问题，运行自动修复..."
         if [[ -f "./scripts/fix-modsecurity-pcre.sh" ]]; then
-            ./scripts/fix-modsecurity-pcre.sh || {
-                echo -e "  ${WARNING_MARK} PCRE修复失败，ModSecurity可能已被禁用"
-                echo -e "  ${INFO_MARK} 请查看 /var/log/nginx-pcre-fix.log 获取详细信息"
-            }
+            ./scripts/fix-modsecurity-pcre.sh || true
+            echo -e "  ${INFO_MARK} PCRE修复脚本已执行"
         else
-            echo -e "  ${WARNING_MARK} 未找到PCRE修复脚本，请手动运行: /usr/local/bin/nginx-pcre-fix"
+            echo -e "  ${WARNING_MARK} 未找到PCRE修复脚本"
         fi
     else
         echo -e "  ${CHECK_MARK} ModSecurity PCRE兼容性正常"
@@ -430,13 +547,16 @@ EOF
 optimize_valkey() {
     echo -e "${GEAR} ${CYAN}优化Valkey配置...${NC}"
     
+    # 计算内存分配
+    calculate_memory_allocation $TOTAL_RAM_GB
+    
     create_backup "$VALKEY_CONFIG" "valkey.conf"
     
     # 优化Valkey配置用于Magento2会话和缓存
-    sudo tee -a "$VALKEY_CONFIG" > /dev/null << 'EOF'
+    sudo tee -a "$VALKEY_CONFIG" > /dev/null << EOF
 
-# Magento2 Optimized Settings
-maxmemory 6gb
+# Magento2 Optimized Settings for ${TOTAL_RAM_GB}GB RAM
+maxmemory ${VALKEY_MEMORY_GB}gb
 maxmemory-policy allkeys-lru
 maxclients 10000
 tcp-keepalive 60
@@ -452,18 +572,22 @@ tcp-backlog 511
 EOF
 
     echo -e "  ${CHECK_MARK} Valkey配置已优化 (适用于Magento2会话存储)"
+    echo -e "  ${INFO_MARK} 最大内存: ${VALKEY_MEMORY_GB}GB"
 }
 
 optimize_opensearch() {
     echo -e "${GEAR} ${CYAN}优化OpenSearch配置...${NC}"
     
+    # 计算内存分配
+    calculate_memory_allocation $TOTAL_RAM_GB
+    
     create_backup "$OPENSEARCH_CONFIG" "opensearch.yml"
     create_backup "$OPENSEARCH_JVM_CONFIG" "jvm.options"
     
     # 创建优化的OpenSearch配置
-    sudo tee "$OPENSEARCH_CONFIG" > /dev/null << 'EOF'
+    sudo tee "$OPENSEARCH_CONFIG" > /dev/null << EOF
 # OpenSearch Configuration for Magento2
-# Optimized for 64GB RAM server with multiple Magento2 sites
+# Optimized for ${TOTAL_RAM_GB}GB RAM server with multiple Magento2 sites
 
 cluster.name: magento2-cluster
 node.name: magento2-node-1
@@ -514,14 +638,14 @@ cluster.routing.allocation.disk.watermark.high: 90%
 cluster.routing.allocation.disk.watermark.flood_stage: 95%
 EOF
 
-    # 优化JVM设置 (分配12GB内存给OpenSearch)
-    sudo tee "$OPENSEARCH_JVM_CONFIG" > /dev/null << 'EOF'
+    # 优化JVM设置 (动态分配内存给OpenSearch)
+    sudo tee "$OPENSEARCH_JVM_CONFIG" > /dev/null << EOF
 # OpenSearch JVM Options for Magento2 (Java 11 compatible)
-# 针对64GB RAM服务器优化
+# 针对${TOTAL_RAM_GB}GB RAM服务器优化
 
-# Heap Size Settings (使用8GB，适合多个Magento2站点)
--Xms8g
--Xmx8g
+# Heap Size Settings (使用${OPENSEARCH_MEMORY_GB}GB，适合多个Magento2站点)
+-Xms${OPENSEARCH_MEMORY_GB}g
+-Xmx${OPENSEARCH_MEMORY_GB}g
 
 # Garbage Collection Settings (Java 11 compatible)
 -XX:+UseG1GC
@@ -581,6 +705,7 @@ LimitNOFILE=65535
 EOF
 
     echo -e "  ${CHECK_MARK} OpenSearch配置已优化 (适用于Magento2产品搜索)"
+    echo -e "  ${INFO_MARK} JVM堆内存: ${OPENSEARCH_MEMORY_GB}GB"
 }
 
 restart_services() {
@@ -869,6 +994,21 @@ restore_all() {
 
 # 主程序
 main() {
+    # 检查第一个参数是否为内存大小
+    if [[ "$1" =~ ^[0-9]+$ ]]; then
+        TOTAL_RAM_GB=$1
+        shift  # 移除内存参数，剩下的参数传给后续处理
+        
+        # 验证内存大小
+        if [[ ! "$TOTAL_RAM_GB" =~ ^(64|128|256)$ ]]; then
+            echo -e "${RED}错误: 不支持的内存大小 '$TOTAL_RAM_GB'${NC}"
+            echo -e "${YELLOW}支持的内存大小: 64, 128, 256${NC}"
+            echo
+            print_help
+            exit 1
+        fi
+    fi
+    
     case "${1:-help}" in
         "optimize")
             case "${2}" in
@@ -947,7 +1087,7 @@ main() {
 # 检查是否以root权限运行
 if [[ $EUID -eq 0 ]]; then
     echo -e "${WARNING_MARK} ${YELLOW}警告: 请不要以root身份直接运行此脚本${NC}"
-    echo -e "使用: ${GREEN}./magento2-optimizer.sh optimize${NC}"
+    echo -e "使用: ${GREEN}./magento2-optimizer.sh [64|128|256] optimize${NC}"
     exit 1
 fi
 

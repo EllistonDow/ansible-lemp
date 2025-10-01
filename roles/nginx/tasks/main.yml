@@ -1,8 +1,8 @@
 ---
 - name: Include install tasks
   include_tasks: install.yml
-  when: nginx_action == "install"
+  when: nginx_action is not defined or nginx_action == "install"
 
 - name: Include uninstall tasks
   include_tasks: uninstall.yml
-  when: nginx_action == "uninstall"
+  when: nginx_action is defined and nginx_action == "uninstall"
