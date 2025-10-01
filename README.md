@@ -1,4 +1,4 @@
-# Ansible LEMP Stack v1.8.3
+# Ansible LEMP Stack v1.8.4
 
 A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
 
@@ -188,6 +188,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Star the repository if it helps you! ⭐
 
 ## 🔄 Version History
+
+- **v1.8.4** - Home Directory Permission Auto-Fix (2025-10-01)
+  - 🔧 Auto-detect restrictive home directory permissions (e.g., 750)
+  - 🎯 Fix common 404 errors caused by inaccessible parent directories
+  - ✅ Automatic fix in magento-permissions.sh setup mode
+  - 🔍 Enhanced check mode with home directory permission validation
+  - 📋 Clear explanations and fix suggestions (chmod 711)
+  - 🛡️ Secure solution: owner full control, others traverse-only
 
 - **v1.8.3** - Essential System Utilities Integration (2025-10-01)
   - 📦 Added essential system utilities to basic-tools role
