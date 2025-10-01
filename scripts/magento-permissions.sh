@@ -38,13 +38,15 @@ print_help() {
     echo -e "${CYAN}用法: $0 [选项] [网站路径]${NC}"
     echo
     echo -e "${YELLOW}基本用法:${NC}"
-    echo -e "  ${GREEN}$0 setup [用户名] [网站路径]${NC}"
+    echo -e "  ${GREEN}$0 setup [用户名] [网站路径] [--yes|-y]${NC}"
     echo -e "    为 Magento2 网站设置安全权限"
     echo -e "    用户名: 文件所有者（如 doge）"
     echo -e "    网站路径: Magento2 根目录"
+    echo -e "    --yes, -y: 跳过确认提示"
     echo
-    echo -e "  ${GREEN}$0 quick [网站路径]${NC}"
+    echo -e "  ${GREEN}$0 quick [网站路径] [--yes|-y]${NC}"
     echo -e "    快速设置权限（使用当前用户）"
+    echo -e "    --yes, -y: 跳过确认提示"
     echo
     echo -e "  ${GREEN}$0 restore${NC}"
     echo -e "    还原 Nginx 和 PHP-FPM 为默认配置"
@@ -63,8 +65,12 @@ print_help() {
     echo -e "  ${CYAN}# 为 doge 用户设置 /home/doge/hawk 网站权限${NC}"
     echo -e "  $0 setup doge /home/doge/hawk"
     echo
+    echo -e "  ${CYAN}# 跳过确认提示（适合批量处理）${NC}"
+    echo -e "  $0 setup doge /home/doge/hawk --yes"
+    echo -e "  $0 setup doge /home/doge/papa -y"
+    echo
     echo -e "  ${CYAN}# 快速设置当前目录权限${NC}"
-    echo -e "  cd /home/doge/tank && $0 quick ."
+    echo -e "  cd /home/doge/tank && $0 quick . -y"
     echo
     echo -e "  ${CYAN}# 检查权限配置${NC}"
     echo -e "  $0 check /home/doge/hawk"
@@ -99,6 +105,7 @@ check_magento_dir() {
 setup_permissions() {
     local site_user="$1"
     local site_path="$2"
+    local skip_confirm="${3:-no}"
     
     print_header
     echo -e "${INFO_MARK} ${CYAN}配置信息:${NC}"
@@ -108,12 +115,14 @@ setup_permissions() {
     echo -e "  Nginx 用户: ${NGINX_USER} (保持不变)"
     echo
     
-    # 确认
-    read -p "确认执行? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo -e "${INFO_MARK} 操作已取消"
-        exit 0
+    # 确认（除非使用 --yes 参数）
+    if [[ "$skip_confirm" != "yes" ]]; then
+        read -p "确认执行? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${INFO_MARK} 操作已取消"
+            exit 0
+        fi
     fi
     
     echo -e "${INFO_MARK} ${CYAN}开始设置权限...${NC}"
@@ -225,6 +234,7 @@ setup_permissions() {
 # 快速设置（使用当前用户）
 quick_setup() {
     local site_path="$1"
+    local skip_confirm="${2:-no}"
     local current_user=$(whoami)
     
     if [[ "$current_user" == "root" ]]; then
@@ -233,7 +243,7 @@ quick_setup() {
         exit 1
     fi
     
-    setup_permissions "$current_user" "$site_path"
+    setup_permissions "$current_user" "$site_path" "$skip_confirm"
 }
 
 # 检查权限配置
@@ -423,23 +433,29 @@ restore_config() {
 
 # 主程序
 main() {
+    # 检查是否有 --yes 或 -y 参数
+    local skip_confirm="no"
+    if [[ "$*" =~ --yes ]] || [[ "$*" =~ " -y" ]] || [[ "$*" =~ ^-y ]]; then
+        skip_confirm="yes"
+    fi
+    
     case "${1:-help}" in
         "setup")
             if [[ -z "$2" ]] || [[ -z "$3" ]]; then
                 echo -e "${CROSS_MARK} ${RED}参数错误${NC}"
-                echo -e "用法: $0 setup [用户名] [网站路径]"
+                echo -e "用法: $0 setup [用户名] [网站路径] [--yes|-y]"
                 exit 1
             fi
-            setup_permissions "$2" "$3"
+            setup_permissions "$2" "$3" "$skip_confirm"
             ;;
         
         "quick")
             if [[ -z "$2" ]]; then
                 echo -e "${CROSS_MARK} ${RED}参数错误${NC}"
-                echo -e "用法: $0 quick [网站路径]"
+                echo -e "用法: $0 quick [网站路径] [--yes|-y]"
                 exit 1
             fi
-            quick_setup "$2"
+            quick_setup "$2" "$skip_confirm"
             ;;
         
         "check")
