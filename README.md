@@ -1,4 +1,4 @@
-# Ansible LEMP Stack v1.8.2
+# Ansible LEMP Stack v1.8.3
 
 A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
 
@@ -188,6 +188,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Star the repository if it helps you! ⭐
 
 ## 🔄 Version History
+
+- **v1.8.3** - Essential System Utilities Integration (2025-10-01)
+  - 📦 Added essential system utilities to basic-tools role
+  - 🔧 Fixed lemp-check.sh dependency warnings (net-tools, netstat)
+  - 🛠️ Added diagnostic tools: curl, wget, lsof, dnsutils, htop
+  - 🌐 Added network utilities: traceroute, telnet, tcpdump
+  - 💻 Added development tools: vim, git, tree
+  - 📂 Added archive tools: zip, unzip
+  - ✅ All utilities installed automatically during setup
 
 - **v1.8.2** - PHP Configuration Auto-Add Fix (2025-10-01)
   - 🔧 Fixed PHP config addition for PHP 8.3 minimal php.ini
