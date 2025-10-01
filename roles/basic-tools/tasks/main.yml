@@ -4,6 +4,27 @@
     update_cache: yes
     cache_valid_time: 3600
 
+- name: Install essential system utilities
+  apt:
+    name:
+      - net-tools        # netstat, ifconfig
+      - curl            # HTTP client
+      - wget            # Download utility
+      - vim             # Text editor
+      - htop            # Process monitor
+      - tree            # Directory listing
+      - unzip           # Archive utility
+      - zip             # Archive utility
+      - git             # Version control
+      - lsof            # List open files
+      - dnsutils        # DNS utilities (dig, nslookup)
+      - iputils-ping    # Ping utility
+      - traceroute      # Network diagnostic
+      - telnet          # Network testing
+      - tcpdump         # Network packet analyzer (optional)
+    state: present
+    update_cache: no
+
 - name: Install Composer
   include_tasks: composer.yml
 
