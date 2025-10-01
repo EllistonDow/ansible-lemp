@@ -173,7 +173,7 @@ setup_permissions() {
     sudo find . -type f -exec chmod 644 {} \;
     
     # 3. 设置可写目录权限
-    echo -e "${INFO_MARK} 设置可写目录权限（775）"
+    echo -e "${INFO_MARK} 设置可写目录权限（775 + setgid）"
     local writable_dirs=(
         "var"
         "generated"
@@ -186,6 +186,8 @@ setup_permissions() {
             echo -e "  ${CHECK_MARK} $dir"
             sudo find "$dir" -type d -exec chmod 775 {} \;
             sudo find "$dir" -type f -exec chmod 664 {} \;
+            # 设置 setgid 位，确保新文件自动继承组
+            sudo find "$dir" -type d -exec chmod g+s {} \;
         fi
     done
     
