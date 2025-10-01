@@ -261,10 +261,32 @@ check_permissions() {
         "bin"
     )
     
+    # 需要 setgid 的可写目录
+    local writable_dirs=("var" "generated" "pub/media" "pub/static")
+    
     for dir in "${check_dirs[@]}"; do
         if [[ -d "$dir" ]]; then
             local perms=$(ls -ld "$dir" | awk '{print $1, $3, $4}')
-            echo -e "  $dir: $perms"
+            local perm_str=$(ls -ld "$dir" | awk '{print $1}')
+            
+            # 检查是否是可写目录且是否有 setgid
+            local needs_setgid=false
+            for wdir in "${writable_dirs[@]}"; do
+                if [[ "$dir" == "$wdir" ]]; then
+                    needs_setgid=true
+                    break
+                fi
+            done
+            
+            if [[ "$needs_setgid" == true ]]; then
+                if [[ "$perm_str" =~ rws ]]; then
+                    echo -e "  $dir: $perms ${CHECK_MARK}"
+                else
+                    echo -e "  $dir: $perms ${WARNING_MARK} ${YELLOW}缺少 setgid${NC}"
+                fi
+            else
+                echo -e "  $dir: $perms"
+            fi
         else
             echo -e "  $dir: ${WARNING_MARK} 不存在"
         fi
