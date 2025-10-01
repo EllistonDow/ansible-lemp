@@ -334,6 +334,29 @@ check_permissions() {
     fi
     echo
     
+    # Setgid 位检查
+    echo -e "${YELLOW}Setgid 位检查（确保新文件继承组）:${NC}"
+    local setgid_issues=0
+    for dir in "var" "generated" "pub/media" "pub/static"; do
+        if [[ -d "$dir" ]]; then
+            local perm_str=$(ls -ld "$dir" | awk '{print $1}')
+            if [[ "$perm_str" =~ rws ]]; then
+                echo -e "  ${CHECK_MARK} $dir - setgid 已设置 (drwxrws**r**-x)"
+            else
+                echo -e "  ${CROSS_MARK} ${RED}$dir - 缺少 setgid${NC} ($perm_str)"
+                echo -e "     ${INFO_MARK} 运行: cd $site_path && sudo find $dir -type d -exec chmod g+s {} \;"
+                ((setgid_issues++))
+            fi
+        fi
+    done
+    
+    if [[ "$setgid_issues" -eq 0 ]]; then
+        echo -e "  ${CHECK_MARK} ${GREEN}所有可写目录都已正确设置 setgid${NC}"
+    else
+        echo -e "  ${WARNING_MARK} ${YELLOW}发现 $setgid_issues 个目录缺少 setgid，可能导致权限问题${NC}"
+    fi
+    echo
+    
     # 权限检查
     echo -e "${YELLOW}权限问题检查:${NC}"
     local issues=0
