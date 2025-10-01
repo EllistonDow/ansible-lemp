@@ -42,6 +42,11 @@ echo -e "${INFO_MARK} 文件所有者: $SITE_USER"
 echo -e "${INFO_MARK} Nginx 组: $NGINX_GROUP"
 echo
 
+# 显示当前模式
+echo -e "${INFO_MARK} ${CYAN}当前 Magento 模式:${NC}"
+php bin/magento deploy:mode:show
+echo
+
 # 1. 启用维护模式
 echo -e "${GEAR} ${CYAN}启用维护模式...${NC}"
 php bin/magento maintenance:enable
@@ -165,6 +170,11 @@ echo
 
 echo -e "${CHECK_MARK} ${GREEN}部署完成！${NC}"
 echo -e "${INFO_MARK} 网站应该可以正常访问了"
+echo
+
+# 再次显示当前模式
+echo -e "${INFO_MARK} ${CYAN}部署后 Magento 模式:${NC}"
+php bin/magento deploy:mode:show
 echo
 
 # 可选：显示生成目录的权限

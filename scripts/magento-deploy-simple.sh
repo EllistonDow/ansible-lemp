@@ -32,6 +32,11 @@ fi
 
 cd "$SITE_PATH"
 
+# 显示当前模式
+echo -e "${INFO_MARK} ${CYAN}当前 Magento 模式:${NC}"
+php bin/magento deploy:mode:show
+echo
+
 # 检查是否在 www-data 组
 if ! groups | grep -q www-data; then
     echo -e "${YELLOW}⚠️  警告: 当前用户不在 www-data 组${NC}"
@@ -146,6 +151,11 @@ du -h --max-depth=1 | sort -hr | head -10
 echo
 
 echo -e "${CHECK_MARK} ${GREEN}部署完成！${NC}"
+echo
+
+# 再次显示当前模式
+echo -e "${INFO_MARK} ${CYAN}部署后 Magento 模式:${NC}"
+php bin/magento deploy:mode:show
 echo
 
 # 显示关键目录权限
