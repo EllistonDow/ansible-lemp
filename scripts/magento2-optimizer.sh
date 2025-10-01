@@ -711,11 +711,13 @@ EOF
 restart_services() {
     echo -e "${GEAR} ${CYAN}重启相关服务...${NC}"
     
+    # 先重载systemd配置，避免警告
+    sudo systemctl daemon-reload
+    
     sudo systemctl restart mysql && echo -e "  ${CHECK_MARK} MySQL已重启"
     sudo systemctl restart php8.3-fpm && echo -e "  ${CHECK_MARK} PHP-FPM已重启"
     sudo systemctl restart nginx && echo -e "  ${CHECK_MARK} Nginx已重启"
     sudo systemctl restart valkey && echo -e "  ${CHECK_MARK} Valkey已重启"
-    sudo systemctl daemon-reload
     sudo systemctl restart opensearch && echo -e "  ${CHECK_MARK} OpenSearch已重启"
 }
 
