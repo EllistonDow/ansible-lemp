@@ -1,4 +1,4 @@
-# Ansible LEMP Stack v1.8.5
+# Ansible LEMP Stack v1.8.6
 
 A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
 
@@ -188,6 +188,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Star the repository if it helps you! ⭐
 
 ## 🔄 Version History
+
+- **v1.8.6** - Sudo-Free Magento Deployment Script (2025-10-01)
+  - 🚀 New script: magento-deploy-simple.sh (no sudo required)
+  - 👥 Auto-add doge user to www-data group
+  - ✅ Smart group permission handling (chgrp instead of sudo chown)
+  - 📝 Helpful error messages with setup instructions
+  - ⚡ Faster deployment without sudo password prompts
+  - 🎯 Follows Linux permission best practices
 
 - **v1.8.5** - Magento Deployment Script with Smart Permission Handling (2025-10-01)
   - 🚀 Complete Magento deployment automation script
