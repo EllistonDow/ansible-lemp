@@ -128,6 +128,39 @@ setup_permissions() {
     # 检查目录
     check_magento_dir "$site_path" || exit 1
     
+    # 检查并修复主目录权限（常见问题）
+    local parent_dir=$(dirname "$site_path")
+    while [[ "$parent_dir" != "/" && "$parent_dir" =~ ^/home/ ]]; do
+        local current_perms=$(stat -c "%a" "$parent_dir" 2>/dev/null)
+        local other_perms=${current_perms: -1}
+        
+        if [[ "$other_perms" == "0" ]]; then
+            echo -e "${WARNING_MARK} ${YELLOW}检测到主目录权限问题: $parent_dir (${current_perms})${NC}"
+            echo -e "${INFO_MARK} Nginx 需要执行权限才能访问网站目录"
+            echo -e "${INFO_MARK} 建议设置为 711 (drwx--x--x)：所有者完全控制，其他用户只能通过"
+            echo
+            read -p "是否修复主目录权限? (Y/n): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                chmod 711 "$parent_dir"
+                echo -e "${CHECK_MARK} ${GREEN}已修复: $parent_dir → 711${NC}"
+                # 验证修复
+                if sudo -u www-data test -x "$parent_dir"; then
+                    echo -e "${CHECK_MARK} ${GREEN}验证成功: Nginx 现在可以访问此目录${NC}"
+                else
+                    echo -e "${WARNING_MARK} ${YELLOW}警告: 仍可能存在权限问题${NC}"
+                fi
+            else
+                echo -e "${WARNING_MARK} ${YELLOW}跳过修复，这可能导致 404 错误${NC}"
+            fi
+            echo
+            break
+        fi
+        
+        # 检查上一级目录
+        parent_dir=$(dirname "$parent_dir")
+    done
+    
     cd "$site_path" || exit 1
     
     # 1. 设置基础所有者和组
@@ -247,6 +280,33 @@ check_permissions() {
         local fpm_group=$(grep "^group = " "$PHP_FPM_POOL" | awk '{print $3}')
         echo -e "  PHP-FPM 运行用户: ${fpm_user}"
         echo -e "  PHP-FPM 运行组: ${fpm_group}"
+    fi
+    echo
+    
+    # 检查主目录权限（常见404问题）
+    echo -e "${YELLOW}主目录权限检查:${NC}"
+    local parent_dir=$(dirname "$site_path")
+    local has_home_issue=false
+    
+    while [[ "$parent_dir" != "/" && "$parent_dir" =~ ^/home/ ]]; do
+        local current_perms=$(stat -c "%a" "$parent_dir" 2>/dev/null)
+        local other_perms=${current_perms: -1}
+        local dir_display=$(ls -ld "$parent_dir" | awk '{print $1}')
+        
+        if [[ "$other_perms" == "0" ]]; then
+            echo -e "  ${CROSS_MARK} ${RED}$parent_dir (${dir_display}) - 其他用户无执行权限${NC}"
+            echo -e "     ${INFO_MARK} 这将导致 Nginx 无法访问网站，引发 404 错误"
+            echo -e "     ${INFO_MARK} 建议运行: chmod 711 $parent_dir"
+            has_home_issue=true
+        else
+            echo -e "  ${CHECK_MARK} $parent_dir (${dir_display}) - 权限正常"
+        fi
+        
+        parent_dir=$(dirname "$parent_dir")
+    done
+    
+    if [[ "$has_home_issue" == false ]]; then
+        echo -e "  ${CHECK_MARK} ${GREEN}主目录权限正常${NC}"
     fi
     echo
     
