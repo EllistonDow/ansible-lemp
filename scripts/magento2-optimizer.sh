@@ -526,9 +526,20 @@ EOF
     
     # 自动设置ModSecurity为级别1 (Magento2优化)
     echo -e "  ${GEAR} 设置ModSecurity为Magento2优化级别..."
-    if [[ -f "./scripts/toggle-modsecurity.sh" ]]; then
-        ./scripts/toggle-modsecurity.sh 1 > /dev/null 2>&1 || true
-        echo -e "  ${INFO_MARK} ModSecurity级别已设置为1 (如果脚本存在)"
+    
+    # 智能路径检测
+    TOGGLE_SCRIPT=""
+    if [[ -f "./toggle-modsecurity.sh" ]]; then
+        TOGGLE_SCRIPT="./toggle-modsecurity.sh"
+    elif [[ -f "./scripts/toggle-modsecurity.sh" ]]; then
+        TOGGLE_SCRIPT="./scripts/toggle-modsecurity.sh"
+    elif [[ -f "../scripts/toggle-modsecurity.sh" ]]; then
+        TOGGLE_SCRIPT="../scripts/toggle-modsecurity.sh"
+    fi
+    
+    if [[ -n "$TOGGLE_SCRIPT" ]]; then
+        $TOGGLE_SCRIPT 1 > /dev/null 2>&1 || true
+        echo -e "  ${INFO_MARK} ModSecurity级别已设置为1"
     else
         echo -e "  ${WARNING_MARK} 未找到toggle-modsecurity.sh，跳过ModSecurity设置"
     fi
