@@ -1,4 +1,4 @@
-# Ansible LEMP Stack v1.8.4
+# Ansible LEMP Stack v1.8.5
 
 A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
 
@@ -188,6 +188,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Star the repository if it helps you! ⭐
 
 ## 🔄 Version History
+
+- **v1.8.5** - Magento Deployment Script with Smart Permission Handling (2025-10-01)
+  - 🚀 Complete Magento deployment automation script
+  - 🔧 Intelligent generated directory handling (try clean, recreate if needed)
+  - 🛡️ Automatic permission fix after deployment (user:www-data, 775/664)
+  - ✅ Solves "rm -rf generated" permission issues
+  - 📦 Full workflow: upgrade, compile, deploy, reindex
+  - 🔄 Maintenance mode automation
+  - 💾 Disk usage reporting
 
 - **v1.8.4** - Home Directory Permission Auto-Fix (2025-10-01)
   - 🔧 Auto-detect restrictive home directory permissions (e.g., 750)
