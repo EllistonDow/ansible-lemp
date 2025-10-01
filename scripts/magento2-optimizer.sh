@@ -301,6 +301,23 @@ EOF
     echo -e "  ${INFO_MARK} InnoDB Buffer Pool: ${MYSQL_MEMORY_GB}GB (${MYSQL_INSTANCES}个实例)"
 }
 
+# 设置或更新PHP配置的辅助函数
+set_php_config() {
+    local config_file="$1"
+    local key="$2"
+    local value="$3"
+    
+    # 检查配置是否存在（包括注释版本）
+    if grep -q "^${key}\s*=" "$config_file" || grep -q "^;${key}\s*=" "$config_file"; then
+        # 配置存在，进行替换
+        sudo sed -i "s|^${key}\s*=.*|${key} = ${value}|" "$config_file"
+        sudo sed -i "s|^;${key}\s*=.*|${key} = ${value}|" "$config_file"
+    else
+        # 配置不存在，添加到文件末尾
+        echo "${key} = ${value}" | sudo tee -a "$config_file" > /dev/null
+    fi
+}
+
 optimize_php_fpm() {
     echo -e "${GEAR} ${CYAN}优化PHP-FPM配置...${NC}"
     
@@ -337,19 +354,14 @@ optimize_php_fpm() {
     sudo sed -i 's/^upload_max_filesize = .*/upload_max_filesize = 64M/' "$PHP_FPM_INI_CONFIG"
     sudo sed -i 's/^max_file_uploads = .*/max_file_uploads = 100/' "$PHP_FPM_INI_CONFIG"
     
-    # Magento2 关键配置 (防止后台表单提交失败)
-    sudo sed -i 's/^max_input_vars = .*/max_input_vars = 4000/' "$PHP_FPM_INI_CONFIG"
-    sudo sed -i 's/^;max_input_vars = .*/max_input_vars = 4000/' "$PHP_FPM_INI_CONFIG"
-    sudo sed -i 's/^zlib.output_compression = .*/zlib.output_compression = Off/' "$PHP_FPM_INI_CONFIG"
-    sudo sed -i 's/^;zlib.output_compression = .*/zlib.output_compression = Off/' "$PHP_FPM_INI_CONFIG"
-    sudo sed -i 's|^;date.timezone =.*|date.timezone = America/Los_Angeles|' "$PHP_FPM_INI_CONFIG"
-    sudo sed -i 's|^date.timezone =.*|date.timezone = America/Los_Angeles|' "$PHP_FPM_INI_CONFIG"
+    # Magento2 关键配置 (防止后台表单提交失败) - 使用函数确保配置存在
+    set_php_config "$PHP_FPM_INI_CONFIG" "max_input_vars" "4000"
+    set_php_config "$PHP_FPM_INI_CONFIG" "zlib.output_compression" "Off"
+    set_php_config "$PHP_FPM_INI_CONFIG" "date.timezone" "America/Los_Angeles"
     
     # 性能优化：文件路径缓存
-    sudo sed -i 's/^;realpath_cache_size =.*/realpath_cache_size = 10M/' "$PHP_FPM_INI_CONFIG"
-    sudo sed -i 's/^realpath_cache_size =.*/realpath_cache_size = 10M/' "$PHP_FPM_INI_CONFIG"
-    sudo sed -i 's/^;realpath_cache_ttl =.*/realpath_cache_ttl = 7200/' "$PHP_FPM_INI_CONFIG"
-    sudo sed -i 's/^realpath_cache_ttl =.*/realpath_cache_ttl = 7200/' "$PHP_FPM_INI_CONFIG"
+    set_php_config "$PHP_FPM_INI_CONFIG" "realpath_cache_size" "10M"
+    set_php_config "$PHP_FPM_INI_CONFIG" "realpath_cache_ttl" "7200"
     
     # 优化PHP-CLI.ini设置 (Magento2命令行操作需要更多内存)
     sudo sed -i 's/^memory_limit = .*/memory_limit = 4G/' "$PHP_CLI_INI_CONFIG"
@@ -359,19 +371,14 @@ optimize_php_fpm() {
     sudo sed -i 's/^upload_max_filesize = .*/upload_max_filesize = 64M/' "$PHP_CLI_INI_CONFIG"
     sudo sed -i 's/^max_file_uploads = .*/max_file_uploads = 100/' "$PHP_CLI_INI_CONFIG"
     
-    # Magento2 关键配置 (CLI也需要)
-    sudo sed -i 's/^max_input_vars = .*/max_input_vars = 4000/' "$PHP_CLI_INI_CONFIG"
-    sudo sed -i 's/^;max_input_vars = .*/max_input_vars = 4000/' "$PHP_CLI_INI_CONFIG"
-    sudo sed -i 's/^zlib.output_compression = .*/zlib.output_compression = Off/' "$PHP_CLI_INI_CONFIG"
-    sudo sed -i 's/^;zlib.output_compression = .*/zlib.output_compression = Off/' "$PHP_CLI_INI_CONFIG"
-    sudo sed -i 's|^;date.timezone =.*|date.timezone = America/Los_Angeles|' "$PHP_CLI_INI_CONFIG"
-    sudo sed -i 's|^date.timezone =.*|date.timezone = America/Los_Angeles|' "$PHP_CLI_INI_CONFIG"
+    # Magento2 关键配置 (CLI也需要) - 使用函数确保配置存在
+    set_php_config "$PHP_CLI_INI_CONFIG" "max_input_vars" "4000"
+    set_php_config "$PHP_CLI_INI_CONFIG" "zlib.output_compression" "Off"
+    set_php_config "$PHP_CLI_INI_CONFIG" "date.timezone" "America/Los_Angeles"
     
     # 性能优化：文件路径缓存
-    sudo sed -i 's/^;realpath_cache_size =.*/realpath_cache_size = 10M/' "$PHP_CLI_INI_CONFIG"
-    sudo sed -i 's/^realpath_cache_size =.*/realpath_cache_size = 10M/' "$PHP_CLI_INI_CONFIG"
-    sudo sed -i 's/^;realpath_cache_ttl =.*/realpath_cache_ttl = 7200/' "$PHP_CLI_INI_CONFIG"
-    sudo sed -i 's/^realpath_cache_ttl =.*/realpath_cache_ttl = 7200/' "$PHP_CLI_INI_CONFIG"
+    set_php_config "$PHP_CLI_INI_CONFIG" "realpath_cache_size" "10M"
+    set_php_config "$PHP_CLI_INI_CONFIG" "realpath_cache_ttl" "7200"
     
     # OPcache设置 (对Magento2非常重要)
     sudo sed -i 's/^;opcache.enable=.*/opcache.enable=1/' "$PHP_FPM_INI_CONFIG"
