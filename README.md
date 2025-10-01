@@ -1,4 +1,4 @@
-# Ansible LEMP Stack v1.8.1
+# Ansible LEMP Stack v1.8.2
 
 A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
 
@@ -188,6 +188,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Star the repository if it helps you! ⭐
 
 ## 🔄 Version History
+
+- **v1.8.2** - PHP Configuration Auto-Add Fix (2025-10-01)
+  - 🔧 Fixed PHP config addition for PHP 8.3 minimal php.ini
+  - ✨ Added set_php_config() helper function to handle missing configs
+  - 🎯 Ensures critical Magento configs are added if not present
+  - ✅ Fixed max_input_vars, realpath_cache_size/ttl auto-configuration
+  - 🛠️ Works with PHP 8.3's streamlined php.ini template
+  - 💾 Backward compatible: updates existing configs, adds missing ones
 
 - **v1.8.1** - Magento 2.4.8 PHP Optimization & Project Reorganization (2025-10-01)
   - 🎯 Added 5 critical PHP configurations for Magento 2.4.8 official requirements
