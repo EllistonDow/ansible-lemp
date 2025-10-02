@@ -1,0 +1,88 @@
+# ================================================
+# LEMP Stack Automated Tasks (Optimized - BF1)
+# ================================================
+
+MAILTO=""
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+SHELL=/bin/bash
+
+# ================================================
+# 系统服务管理
+# ================================================
+
+# 每周六凌晨 1:00 重启 Magento 相关服务
+# 注意：脚本内部已有日志管理
+0 1 * * 6 /home/doge/ansible-lemp/dogetools/services-restart.sh
+
+# ================================================
+# 每周维护 (周六凌晨 1:10-1:40)
+# 在数据库备份之前完成，避免冲突
+# ================================================
+
+10 1 * * 6 /home/doge/ansible-lemp/scripts/magento2-maintenance.sh weekly papa
+20 1 * * 6 /home/doge/ansible-lemp/scripts/magento2-maintenance.sh weekly ambi
+30 1 * * 6 /home/doge/ansible-lemp/scripts/magento2-maintenance.sh weekly hawk
+40 1 * * 6 /home/doge/ansible-lemp/scripts/magento2-maintenance.sh weekly ipwa
+
+# ================================================
+# 数据库备份 (每天凌晨2点)
+# ================================================
+
+5 2 * * * /home/doge/ansible-lemp/dogetools/mysqldump.sh papa papamage > /home/doge/Dropbox/logs/mysqldump-daily-papa.log 2>&1
+7 2 * * * /home/doge/ansible-lemp/dogetools/mysqldump.sh ambi ambimage > /home/doge/Dropbox/logs/mysqldump-daily-ambi.log 2>&1
+9 2 * * * /home/doge/ansible-lemp/dogetools/mysqldump.sh hawk hawkmage > /home/doge/Dropbox/logs/mysqldump-daily-hawk.log 2>&1
+11 2 * * * /home/doge/ansible-lemp/dogetools/mysqldump.sh ipwa ipwamage > /home/doge/Dropbox/logs/mysqldump-daily-ipwa.log 2>&1
+
+# ================================================
+# 站点完整备份 (每周六凌晨4点)
+# ================================================
+
+15 4 * * 6 /home/doge/ansible-lemp/dogetools/snapshot.sh papa > /home/doge/Dropbox/logs/snapshot-papa.log 2>&1
+25 4 * * 6 /home/doge/ansible-lemp/dogetools/snapshot.sh ambi > /home/doge/Dropbox/logs/snapshot-ambi.log 2>&1
+35 4 * * 6 /home/doge/ansible-lemp/dogetools/snapshot.sh hawk > /home/doge/Dropbox/logs/snapshot-hawk.log 2>&1
+45 4 * * 6 /home/doge/ansible-lemp/dogetools/snapshot.sh ipwa > /home/doge/Dropbox/logs/snapshot-ipwa.log 2>&1
+
+# ================================================
+# Magento 自动维护 (每小时 + 每日)
+# ================================================
+
+# papa 站点
+2 * * * * /home/doge/ansible-lemp/scripts/magento2-maintenance.sh hourly papa
+10 3 * * * /home/doge/ansible-lemp/scripts/magento2-maintenance.sh daily papa
+
+# ambi 站点
+4 * * * * /home/doge/ansible-lemp/scripts/magento2-maintenance.sh hourly ambi
+20 3 * * * /home/doge/ansible-lemp/scripts/magento2-maintenance.sh daily ambi
+
+# hawk 站点
+6 * * * * /home/doge/ansible-lemp/scripts/magento2-maintenance.sh hourly hawk
+30 3 * * * /home/doge/ansible-lemp/scripts/magento2-maintenance.sh daily hawk
+
+# ipwa 站点
+8 * * * * /home/doge/ansible-lemp/scripts/magento2-maintenance.sh hourly ipwa
+40 3 * * * /home/doge/ansible-lemp/scripts/magento2-maintenance.sh daily ipwa
+
+# ================================================
+# 任务执行顺序（周六）
+# ================================================
+# 01:00 - 服务重启 (10-15秒)
+# 01:10 - papa 每周维护 (5-15分钟)
+# 01:20 - ambi 每周维护 (5-15分钟)
+# 01:30 - hawk 每周维护 (5-15分钟)
+# 01:40 - ipwa 每周维护 (5-15分钟)
+# 02:05 - papa 数据库备份 (1-5分钟)
+# 02:07 - ambi 数据库备份 (1-5分钟)
+# 02:09 - hawk 数据库备份 (1-5分钟)
+# 02:11 - ipwa 数据库备份 (1-5分钟)
+# 03:10 - papa 每日维护
+# 03:20 - ambi 每日维护
+# 03:30 - hawk 每日维护
+# 03:40 - ipwa 每日维护
+# 04:15 - papa 站点快照
+# 04:25 - ambi 站点快照
+# 04:35 - hawk 站点快照
+# 04:45 - ipwa 站点快照
+#
+# 日志位置: /home/doge/Dropbox/logs/
+#
+
