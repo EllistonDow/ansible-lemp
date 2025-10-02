@@ -114,6 +114,7 @@ cd /home/doge/ansible-lemp
 
 # 方案 1: 使用新的优化配置（推荐）
 crontab crontab-optimized.txt
+crontab crontab-optimized-bf1-fixed.txt
 
 # 方案 2: 手动编辑现有 crontab
 crontab -e

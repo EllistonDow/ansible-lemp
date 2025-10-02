@@ -28,8 +28,8 @@ SHELL=/bin/bash
 # 数据库备份 (每天凌晨2点)
 # ================================================
 
-5 2 * * * /home/doge/ansible-lemp/dogetools/mysqldump.sh papa papamage > /home/doge/Dropbox/logs/mysqldump-daily-papa.log 2>&1
-7 2 * * * /home/doge/ansible-lemp/dogetools/mysqldump.sh ambi ambimage > /home/doge/Dropbox/logs/mysqldump-daily-ambi.log 2>&1
+5 */2 * * * /home/doge/ansible-lemp/dogetools/mysqldump.sh papa papamage > /home/doge/Dropbox/logs/mysqldump-daily-papa.log 2>&1
+7 */2 * * * /home/doge/ansible-lemp/dogetools/mysqldump.sh ambi ambimage > /home/doge/Dropbox/logs/mysqldump-daily-ambi.log 2>&1
 9 2 * * * /home/doge/ansible-lemp/dogetools/mysqldump.sh hawk hawkmage > /home/doge/Dropbox/logs/mysqldump-daily-hawk.log 2>&1
 11 2 * * * /home/doge/ansible-lemp/dogetools/mysqldump.sh ipwa ipwamage > /home/doge/Dropbox/logs/mysqldump-daily-ipwa.log 2>&1
 
