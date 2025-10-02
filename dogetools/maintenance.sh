@@ -15,7 +15,7 @@ fi
 
 BASE_DIR="/home/doge"
 SITE_DIR="${BASE_DIR}/${SITE_NAME}"
-LOG_DIR="$HOME/Dropbox/cronscripts/logs"
+LOG_DIR="$HOME/Dropbox/logs"
 PHP_BIN="/usr/bin/php"
 mkdir -p "$LOG_DIR"
 
