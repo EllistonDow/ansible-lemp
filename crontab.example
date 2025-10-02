@@ -1,0 +1,81 @@
+# ================================================
+# LEMP Stack Automated Tasks
+# ================================================
+
+# Cron邮件通知（可选）
+# MAILTO=your-email@example.com
+# 或者禁用邮件
+MAILTO=""
+
+# ================================================
+# 系统服务管理
+# ================================================
+
+# 每周六凌晨 1:15 重启 Magento 相关服务
+# 注意：脚本内部已有日志，不需要外部重定向
+15 1 * * 6 /home/doge/ansible-lemp/dogetools/services-resetart.sh
+
+# ================================================
+# 数据库备份 (每天凌晨2点)
+# ================================================
+
+# ntca 站点数据库备份
+5 2 * * * /home/doge/ansible-lemp/dogetools/mysqldump.sh ntca ntcamage > /home/doge/Dropbox/cron/logs/mysqldump_daily_ntca.log 2>&1
+
+# bdgy 站点数据库备份
+7 2 * * * /home/doge/ansible-lemp/dogetools/mysqldump.sh bdgy bdgymage > /home/doge/Dropbox/cron/logs/mysqldump_daily_bdgy.log 2>&1
+
+# sava 站点数据库备份
+9 2 * * * /home/doge/ansible-lemp/dogetools/mysqldump.sh sava savamage > /home/doge/Dropbox/cron/logs/mysqldump_daily_sava.log 2>&1
+
+# ================================================
+# 站点完整备份 (每周六凌晨5点)
+# ================================================
+
+# ntca 站点文件备份
+35 5 * * 6 /home/doge/ansible-lemp/dogetools/snapshot.sh ntca > /home/doge/Dropbox/cron/logs/snapshot_ntca.log 2>&1
+
+# bdgy 站点文件备份
+40 5 * * 6 /home/doge/ansible-lemp/dogetools/snapshot.sh bdgy > /home/doge/Dropbox/cron/logs/snapshot_bdgy.log 2>&1
+
+# sava 站点文件备份
+45 5 * * 6 /home/doge/ansible-lemp/dogetools/snapshot.sh sava > /home/doge/Dropbox/cron/logs/snapshot_sava.log 2>&1
+
+# ================================================
+# Magento2 自动维护
+# ================================================
+
+# ntca 站点维护
+2 * * * * /home/doge/ansible-lemp/scripts/magento2-maintenance.sh hourly ntca
+10 2 * * * /home/doge/ansible-lemp/scripts/magento2-maintenance.sh daily ntca
+5 2 * * 6 /home/doge/ansible-lemp/scripts/magento2-maintenance.sh weekly ntca
+
+# bdgy 站点维护
+4 * * * * /home/doge/ansible-lemp/scripts/magento2-maintenance.sh hourly bdgy
+20 2 * * * /home/doge/ansible-lemp/scripts/magento2-maintenance.sh daily bdgy
+15 3 * * 6 /home/doge/ansible-lemp/scripts/magento2-maintenance.sh weekly bdgy
+
+# sava 站点维护
+6 * * * * /home/doge/ansible-lemp/scripts/magento2-maintenance.sh hourly sava
+30 2 * * * /home/doge/ansible-lemp/scripts/magento2-maintenance.sh daily sava
+25 4 * * 6 /home/doge/ansible-lemp/scripts/magento2-maintenance.sh weekly sava
+
+# ================================================
+# 维护说明
+# ================================================
+# 
+# 任务执行顺序（周六）:
+# 01:15 - 服务重启
+# 02:05 - ntca 数据库备份 + 每日维护 (02:05, 02:10)
+# 02:07 - bdgy 数据库备份 + 每日维护 (02:07, 02:20)
+# 02:09 - sava 数据库备份 + 每日维护 (02:09, 02:30)
+# 03:15 - bdgy 每周维护
+# 04:25 - sava 每周维护
+# 05:05 - ntca 每周维护
+# 05:35 - ntca 站点快照
+# 05:40 - bdgy 站点快照
+# 05:45 - sava 站点快照
+#
+# 日志位置: /home/doge/Dropbox/cron/logs/
+#
+

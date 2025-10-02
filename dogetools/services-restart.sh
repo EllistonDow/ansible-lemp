@@ -2,7 +2,7 @@
 # magento-services-restart.sh
 # 重启 Magento 相关服务，日志保存在 /home/doge/cron/logs，并自动清理30天以上日志
 
-LOG_DIR="/home/doge/Dropbox/croncripts/logs"
+LOG_DIR="/home/doge/Dropbox/cron/logs"
 mkdir -p "$LOG_DIR"
 DATE="$(date '+%Y-%m-%d %H:%M:%S')"
 LOG_FILE="$LOG_DIR/services_restart_$(date +%Y%m%d_%H%M%S).log"
@@ -23,9 +23,9 @@ fi
 # ---------- 重启服务 ----------
 for svc in "${SERVICES[@]}"; do
     echo "重启服务: $svc"
-    systemctl restart "$svc"
+    sudo systemctl restart "$svc"
     sleep 2  # 等待服务完全启动
-    systemctl is-active --quiet "$svc" && echo "$svc 已启动" || echo "警告: $svc 未能启动"
+    sudo systemctl is-active --quiet "$svc" && echo "$svc 已启动" || echo "警告: $svc 未能启动"
 done
 
 echo "[$DATE] FINISHED Magento services restart"
