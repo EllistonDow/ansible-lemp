@@ -2,7 +2,7 @@
 # magento-services-restart.sh
 # 重启 Magento 相关服务，日志保存在 /home/doge/cron/logs，并自动清理30天以上日志
 
-LOG_DIR="/home/doge/Dropbox/logs"
+LOG_DIR="/home/doge/Dropbox/logs/services-restart"
 mkdir -p "$LOG_DIR"
 DATE="$(date '+%Y-%m-%d %H:%M:%S')"
 LOG_FILE="$LOG_DIR/services_restart_$(date +%Y%m%d_%H%M%S).log"
