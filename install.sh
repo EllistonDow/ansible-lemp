@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # LEMP Stack Quick Installation Script
+# Version: 2.2.2
 # This script provides a convenient way to install the LEMP stack
 
 set -e
@@ -16,6 +17,14 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Function to show version
+show_version() {
+    echo -e "${BLUE}LEMP Stack Installation Script${NC}"
+    echo -e "Version: ${GREEN}2.2.2${NC}"
+    echo -e "Git Tag: ${GREEN}$(git describe --tags --abbrev=0 2>/dev/null || echo 'N/A')${NC}"
+    echo ""
+}
 
 # Function to print colored output
 print_status() {
@@ -47,15 +56,19 @@ if [ ! -f "ansible.cfg" ] || [ ! -f "playbooks/site.yml" ]; then
     exit 1
 fi
 
+# Show version info
+show_version
+
 print_header "Installation Options"
 echo "1. Full LEMP Stack Installation (recommended)"
 echo "2. Custom Component Selection"
 echo "3. Individual Component Installation"
 echo "4. Uninstall Components"
-echo "5. Exit"
+echo "5. Show Version Information"
+echo "6. Exit"
 echo ""
 
-read -p "Please select an option (1-5): " choice
+read -p "Please select an option (1-6): " choice
 
 case $choice in
     1)
@@ -162,6 +175,14 @@ case $choice in
         ;;
         
     5)
+        print_header "Version Information"
+        show_version
+        print_status "Press Enter to continue..."
+        read
+        exec "$0"  # Restart the script
+        ;;
+        
+    6)
         print_status "Exiting..."
         exit 0
         ;;
