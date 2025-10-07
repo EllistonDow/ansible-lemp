@@ -120,6 +120,7 @@ print_help() {
     echo -e "  ${GREEN}optimize${NC}         - 应用Magento2性能优化配置"
     echo -e "  ${GREEN}restore${NC}          - 还原到原始配置"
     echo -e "  ${GREEN}status${NC}           - 显示当前优化状态"
+    echo -e "  ${GREEN}force-reoptimize${NC} - 强制重新优化（清理混合配置）"
     echo -e "  ${GREEN}help${NC}             - 显示此帮助信息"
     echo
     echo -e "${YELLOW}单独优化选项:${NC}"
@@ -153,6 +154,7 @@ print_help() {
     echo -e "  $0 128 optimize mysql   # 128GB服务器仅优化MySQL"
     echo -e "  $0 256 restore nginx     # 256GB服务器还原Nginx"
     echo -e "  $0 64 status            # 查看64GB服务器优化状态"
+    echo -e "  $0 128 force-reoptimize # 强制重新优化128GB配置（清理混合配置）"
     echo
     echo -e "${YELLOW}内存配置对比:${NC}"
     echo -e "  ${CYAN}64GB:${NC}  MySQL:16GB, OpenSearch:7GB, Valkey:5GB, PHP进程:120"
@@ -169,8 +171,17 @@ create_backup() {
     if [[ -f "$config_file" ]]; then
         echo -e "  ${INFO_MARK} 备份配置文件: $config_file"
         sudo mkdir -p "$BACKUP_DIR"
+        
+        # 保存带时间戳的备份
         sudo cp "$config_file" "$BACKUP_DIR/${backup_name}.backup.$(date +%Y%m%d_%H%M%S)"
-        sudo cp "$config_file" "$BACKUP_DIR/${backup_name}.original" 2>/dev/null || true
+        
+        # 只有在没有原始备份时才保存原始配置
+        if [[ ! -f "$BACKUP_DIR/${backup_name}.original" ]]; then
+            sudo cp "$config_file" "$BACKUP_DIR/${backup_name}.original"
+            echo -e "  ${INFO_MARK} 保存原始配置: ${backup_name}.original"
+        else
+            echo -e "  ${INFO_MARK} 原始配置已存在，跳过保存"
+        fi
     fi
 }
 
@@ -299,23 +310,54 @@ EOF
 
     echo -e "  ${CHECK_MARK} MySQL配置已优化 (适用于Magento2 + ${TOTAL_RAM_GB}GB RAM)"
     echo -e "  ${INFO_MARK} InnoDB Buffer Pool: ${MYSQL_MEMORY_GB}GB (${MYSQL_INSTANCES}个实例)"
+    
+    # 验证关键配置
+    echo -e "  ${INFO_MARK} 验证MySQL配置..."
+    validate_config "mysql" "$MYSQL_CONFIG" "${MYSQL_MEMORY_GB}G" "innodb_buffer_pool_size"
+    validate_config "mysql" "$MYSQL_CONFIG" "${MYSQL_INSTANCES}" "innodb_buffer_pool_instances"
 }
 
-# 设置或更新PHP配置的辅助函数
-set_php_config() {
+# 配置清理函数 - 清理特定服务的旧配置
+clean_config() {
+    local config_file="$1"
+    local service_name="$2"
+    
+    echo -e "  ${INFO_MARK} 清理 ${service_name} 的旧配置..."
+    
+    case "$service_name" in
+        "php-fpm")
+            # 清理PHP-FPM的旧配置行
+            sudo sed -i '/^pm\./d' "$config_file"
+            sudo sed -i '/^;pm\./d' "$config_file"
+            ;;
+        "valkey")
+            # 清理Valkey的Magento2配置
+            sudo sed -i '/# Magento2 Optimized Settings/,/^$/d' "$config_file"
+            ;;
+        "mysql")
+            # MySQL配置完全重写，不需要清理
+            ;;
+        "nginx")
+            # Nginx配置完全重写，不需要清理
+            ;;
+        "opensearch")
+            # OpenSearch配置完全重写，不需要清理
+            ;;
+    esac
+}
+
+# 改进的PHP配置设置函数
+set_php_config_reliable() {
     local config_file="$1"
     local key="$2"
     local value="$3"
     
-    # 检查配置是否存在（包括注释版本）
-    if grep -q "^${key}\s*=" "$config_file" || grep -q "^;${key}\s*=" "$config_file"; then
-        # 配置存在，进行替换
-        sudo sed -i "s|^${key}\s*=.*|${key} = ${value}|" "$config_file"
-        sudo sed -i "s|^;${key}\s*=.*|${key} = ${value}|" "$config_file"
-    else
-        # 配置不存在，添加到文件末尾
-        echo "${key} = ${value}" | sudo tee -a "$config_file" > /dev/null
-    fi
+    # 先删除所有相关行（包括注释版本）
+    sudo sed -i "/^${key}\s*=/d" "$config_file"
+    sudo sed -i "/^;${key}\s*=/d" "$config_file"
+    
+    # 添加新配置到文件末尾
+    echo "${key} = ${value}" | sudo tee -a "$config_file" > /dev/null
 }
 
 optimize_php_fpm() {
@@ -344,18 +386,21 @@ optimize_php_fpm() {
         max_spare_servers=50
     fi
     
-    # 优化PHP-FPM池配置
-    sudo sed -i 's/^pm = .*/pm = dynamic/' "$PHP_FPM_CONFIG"
-    sudo sed -i "s/^pm.max_children = .*/pm.max_children = ${PHP_MAX_CHILDREN}/" "$PHP_FPM_CONFIG"
-    sudo sed -i "s/^pm.start_servers = .*/pm.start_servers = ${start_servers}/" "$PHP_FPM_CONFIG"
-    sudo sed -i "s/^pm.min_spare_servers = .*/pm.min_spare_servers = ${min_spare_servers}/" "$PHP_FPM_CONFIG"
-    sudo sed -i "s/^pm.max_spare_servers = .*/pm.max_spare_servers = ${max_spare_servers}/" "$PHP_FPM_CONFIG"
-    sudo sed -i 's/^;pm.max_requests = .*/pm.max_requests = 1000/' "$PHP_FPM_CONFIG"
+    # 清理旧的PHP-FPM配置
+    clean_config "$PHP_FPM_CONFIG" "php-fpm"
     
-    # 添加进程管理设置
-    if ! grep -q "pm.process_idle_timeout" "$PHP_FPM_CONFIG"; then
-        echo "pm.process_idle_timeout = 60s" | sudo tee -a "$PHP_FPM_CONFIG" > /dev/null
-    fi
+    # 添加新的PHP-FPM池配置（确保所有配置都正确设置）
+    cat << EOF | sudo tee -a "$PHP_FPM_CONFIG" > /dev/null
+
+; Magento2 Optimized PHP-FPM Settings for ${TOTAL_RAM_GB}GB RAM
+pm = dynamic
+pm.max_children = ${PHP_MAX_CHILDREN}
+pm.start_servers = ${start_servers}
+pm.min_spare_servers = ${min_spare_servers}
+pm.max_spare_servers = ${max_spare_servers}
+pm.max_requests = 500
+pm.process_idle_timeout = 60s
+EOF
     
     # 优化PHP-FPM.ini设置 (Magento2官方建议: 生产环境2GB)
     sudo sed -i 's/^memory_limit = .*/memory_limit = 2G/' "$PHP_FPM_INI_CONFIG"
@@ -365,14 +410,14 @@ optimize_php_fpm() {
     sudo sed -i 's/^upload_max_filesize = .*/upload_max_filesize = 64M/' "$PHP_FPM_INI_CONFIG"
     sudo sed -i 's/^max_file_uploads = .*/max_file_uploads = 100/' "$PHP_FPM_INI_CONFIG"
     
-    # Magento2 关键配置 (防止后台表单提交失败) - 使用函数确保配置存在
-    set_php_config "$PHP_FPM_INI_CONFIG" "max_input_vars" "4000"
-    set_php_config "$PHP_FPM_INI_CONFIG" "zlib.output_compression" "Off"
-    set_php_config "$PHP_FPM_INI_CONFIG" "date.timezone" "America/Los_Angeles"
+    # Magento2 关键配置 (防止后台表单提交失败) - 使用可靠函数确保配置存在
+    set_php_config_reliable "$PHP_FPM_INI_CONFIG" "max_input_vars" "4000"
+    set_php_config_reliable "$PHP_FPM_INI_CONFIG" "zlib.output_compression" "Off"
+    set_php_config_reliable "$PHP_FPM_INI_CONFIG" "date.timezone" "America/Los_Angeles"
     
     # 性能优化：文件路径缓存
-    set_php_config "$PHP_FPM_INI_CONFIG" "realpath_cache_size" "10M"
-    set_php_config "$PHP_FPM_INI_CONFIG" "realpath_cache_ttl" "7200"
+    set_php_config_reliable "$PHP_FPM_INI_CONFIG" "realpath_cache_size" "10M"
+    set_php_config_reliable "$PHP_FPM_INI_CONFIG" "realpath_cache_ttl" "7200"
     
     # 优化PHP-CLI.ini设置 (Magento2命令行操作需要更多内存)
     sudo sed -i 's/^memory_limit = .*/memory_limit = 4G/' "$PHP_CLI_INI_CONFIG"
@@ -382,14 +427,14 @@ optimize_php_fpm() {
     sudo sed -i 's/^upload_max_filesize = .*/upload_max_filesize = 64M/' "$PHP_CLI_INI_CONFIG"
     sudo sed -i 's/^max_file_uploads = .*/max_file_uploads = 100/' "$PHP_CLI_INI_CONFIG"
     
-    # Magento2 关键配置 (CLI也需要) - 使用函数确保配置存在
-    set_php_config "$PHP_CLI_INI_CONFIG" "max_input_vars" "4000"
-    set_php_config "$PHP_CLI_INI_CONFIG" "zlib.output_compression" "Off"
-    set_php_config "$PHP_CLI_INI_CONFIG" "date.timezone" "America/Los_Angeles"
+    # Magento2 关键配置 (CLI也需要) - 使用可靠函数确保配置存在
+    set_php_config_reliable "$PHP_CLI_INI_CONFIG" "max_input_vars" "4000"
+    set_php_config_reliable "$PHP_CLI_INI_CONFIG" "zlib.output_compression" "Off"
+    set_php_config_reliable "$PHP_CLI_INI_CONFIG" "date.timezone" "America/Los_Angeles"
     
     # 性能优化：文件路径缓存
-    set_php_config "$PHP_CLI_INI_CONFIG" "realpath_cache_size" "10M"
-    set_php_config "$PHP_CLI_INI_CONFIG" "realpath_cache_ttl" "7200"
+    set_php_config_reliable "$PHP_CLI_INI_CONFIG" "realpath_cache_size" "10M"
+    set_php_config_reliable "$PHP_CLI_INI_CONFIG" "realpath_cache_ttl" "7200"
     
     # OPcache设置 (对Magento2非常重要)
     sudo sed -i 's/^;opcache.enable=.*/opcache.enable=1/' "$PHP_FPM_INI_CONFIG"
@@ -412,6 +457,13 @@ optimize_php_fpm() {
     echo -e "  ${INFO_MARK} 最大进程数: ${PHP_MAX_CHILDREN}, 启动进程: ${start_servers}, 空闲进程: ${min_spare_servers}-${max_spare_servers}"
     echo -e "  ${INFO_MARK} 关键配置: max_input_vars=4000, date.timezone=America/Los_Angeles"
     echo -e "  ${INFO_MARK} 性能优化: realpath_cache_size=10M, zlib.output_compression=Off"
+    
+    # 验证关键配置
+    echo -e "  ${INFO_MARK} 验证PHP-FPM配置..."
+    validate_config "php-fpm" "$PHP_FPM_CONFIG" "${PHP_MAX_CHILDREN}" "pm.max_children"
+    validate_config "php-fpm" "$PHP_FPM_CONFIG" "${start_servers}" "pm.start_servers"
+    validate_config "php-fpm" "$PHP_FPM_CONFIG" "${min_spare_servers}" "pm.min_spare_servers"
+    validate_config "php-fpm" "$PHP_FPM_CONFIG" "${max_spare_servers}" "pm.max_spare_servers"
 }
 
 optimize_nginx() {
@@ -581,9 +633,8 @@ optimize_valkey() {
     
     create_backup "$VALKEY_CONFIG" "valkey.conf"
     
-    # 优化Valkey配置用于Magento2会话和缓存
-    # 先清理之前的Magento2配置
-    sudo sed -i '/# Magento2 Optimized Settings/,/^$/d' "$VALKEY_CONFIG"
+    # 清理旧的Magento2配置
+    clean_config "$VALKEY_CONFIG" "valkey"
     
     # 添加新的Magento2优化配置
     sudo tee -a "$VALKEY_CONFIG" > /dev/null << EOF
@@ -606,6 +657,11 @@ EOF
 
     echo -e "  ${CHECK_MARK} Valkey配置已优化 (适用于Magento2会话存储)"
     echo -e "  ${INFO_MARK} 最大内存: ${VALKEY_MEMORY_GB}GB"
+    
+    # 验证关键配置
+    echo -e "  ${INFO_MARK} 验证Valkey配置..."
+    validate_config "valkey" "$VALKEY_CONFIG" "${VALKEY_MEMORY_GB}gb" "maxmemory"
+    validate_config "valkey" "$VALKEY_CONFIG" "allkeys-lru" "maxmemory-policy"
 }
 
 optimize_opensearch() {
@@ -739,6 +795,71 @@ EOF
 
     echo -e "  ${CHECK_MARK} OpenSearch配置已优化 (适用于Magento2产品搜索)"
     echo -e "  ${INFO_MARK} JVM堆内存: ${OPENSEARCH_MEMORY_GB}GB"
+    
+    # 验证关键配置
+    echo -e "  ${INFO_MARK} 验证OpenSearch配置..."
+    validate_config "opensearch" "$OPENSEARCH_JVM_CONFIG" "${OPENSEARCH_MEMORY_GB}g" "-Xmx"
+}
+
+# 强制重新优化 - 清理所有混合配置
+force_reoptimize() {
+    echo -e "${WARNING_MARK} ${YELLOW}强制重新优化 - 清理混合配置...${NC}"
+    echo -e "  ${INFO_MARK} 这将清理所有旧的优化配置，确保配置一致性"
+    echo
+    
+    # 清理所有配置文件中的旧优化配置
+    echo -e "  ${GEAR} 清理PHP-FPM混合配置..."
+    clean_config "$PHP_FPM_CONFIG" "php-fpm"
+    
+    echo -e "  ${GEAR} 清理Valkey混合配置..."
+    clean_config "$VALKEY_CONFIG" "valkey"
+    
+    echo -e "  ${GEAR} 清理MySQL配置（完全重写）..."
+    # MySQL配置完全重写，不需要特殊清理
+    
+    echo -e "  ${GEAR} 清理Nginx配置（完全重写）..."
+    # Nginx配置完全重写，不需要特殊清理
+    
+    echo -e "  ${GEAR} 清理OpenSearch配置（完全重写）..."
+    # OpenSearch配置完全重写，不需要特殊清理
+    
+    echo -e "  ${CHECK_MARK} 配置清理完成，开始重新优化..."
+    echo
+    
+    # 重新运行优化
+    optimize_all
+}
+
+# 配置验证函数 - 验证配置是否正确应用
+validate_config() {
+    local service="$1"
+    local config_file="$2"
+    local expected_value="$3"
+    local config_key="$4"
+    
+    local actual_value
+    case "$service" in
+        "mysql")
+            actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
+            ;;
+        "php-fpm")
+            actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
+            ;;
+        "valkey")
+            actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | sed "s/.*${config_key} *//" || echo "未设置")
+            ;;
+        "opensearch")
+            actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | sed "s/.*${config_key}//" || echo "未设置")
+            ;;
+    esac
+    
+    if [[ "$actual_value" == "$expected_value" ]]; then
+        echo -e "  ${CHECK_MARK} ${config_key}: ${actual_value}"
+        return 0
+    else
+        echo -e "  ${CROSS_MARK} ${config_key}: ${actual_value} (期望: ${expected_value})"
+        return 1
+    fi
 }
 
 restart_services() {
@@ -1258,6 +1379,10 @@ main() {
         "status")
             print_header
             show_optimization_status
+            ;;
+        "force-reoptimize")
+            print_header
+            force_reoptimize
             ;;
         "help"|"--help"|"-h")
             print_help
