@@ -328,10 +328,21 @@ optimize_php_fpm() {
     create_backup "$PHP_FPM_INI_CONFIG" "php-fpm.ini"
     create_backup "$PHP_CLI_INI_CONFIG" "php-cli.ini"
     
-    # 计算PHP-FPM进程池设置
-    local start_servers=$((PHP_MAX_CHILDREN / 4))
-    local min_spare_servers=$((PHP_MAX_CHILDREN / 5))
-    local max_spare_servers=$((PHP_MAX_CHILDREN / 3))
+    # 计算PHP-FPM进程池设置 (针对128GB服务器优化)
+    local start_servers=30
+    local min_spare_servers=24
+    local max_spare_servers=40
+    
+    # 根据内存大小动态调整
+    if [[ $TOTAL_RAM_GB -eq 64 ]]; then
+        start_servers=20
+        min_spare_servers=16
+        max_spare_servers=30
+    elif [[ $TOTAL_RAM_GB -eq 256 ]]; then
+        start_servers=40
+        min_spare_servers=32
+        max_spare_servers=50
+    fi
     
     # 优化PHP-FPM池配置
     sudo sed -i 's/^pm = .*/pm = dynamic/' "$PHP_FPM_CONFIG"
@@ -571,6 +582,10 @@ optimize_valkey() {
     create_backup "$VALKEY_CONFIG" "valkey.conf"
     
     # 优化Valkey配置用于Magento2会话和缓存
+    # 先清理之前的Magento2配置
+    sudo sed -i '/# Magento2 Optimized Settings/,/^$/d' "$VALKEY_CONFIG"
+    
+    # 添加新的Magento2优化配置
     sudo tee -a "$VALKEY_CONFIG" > /dev/null << EOF
 
 # Magento2 Optimized Settings for ${TOTAL_RAM_GB}GB RAM
@@ -798,19 +813,34 @@ show_optimization_status() {
     
     local php_fpm_max_children_status="❌"
     [[ "$php_fpm_max_children" == "$PHP_MAX_CHILDREN" ]] && php_fpm_max_children_status="✅"
+    # 计算期望的PHP-FPM进程池设置
+    local expected_start_servers=30
+    local expected_min_spare=24
+    local expected_max_spare=40
+    
+    if [[ $TOTAL_RAM_GB -eq 64 ]]; then
+        expected_start_servers=20
+        expected_min_spare=16
+        expected_max_spare=30
+    elif [[ $TOTAL_RAM_GB -eq 256 ]]; then
+        expected_start_servers=40
+        expected_min_spare=32
+        expected_max_spare=50
+    fi
+    
     local php_fpm_start_servers_status="❌"
-    [[ "$php_fpm_start_servers" == "30" ]] && php_fpm_start_servers_status="✅"
+    [[ "$php_fpm_start_servers" == "$expected_start_servers" ]] && php_fpm_start_servers_status="✅"
     local php_fpm_min_spare_status="❌"
-    [[ "$php_fpm_min_spare" == "24" ]] && php_fpm_min_spare_status="✅"
+    [[ "$php_fpm_min_spare" == "$expected_min_spare" ]] && php_fpm_min_spare_status="✅"
     local php_fpm_max_spare_status="❌"
-    [[ "$php_fpm_max_spare" == "40" ]] && php_fpm_max_spare_status="✅"
+    [[ "$php_fpm_max_spare" == "$expected_max_spare" ]] && php_fpm_max_spare_status="✅"
     local php_fpm_max_requests_status="❌"
     [[ "$php_fpm_max_requests" == "500" ]] && php_fpm_max_requests_status="✅"
     
     echo -e "${BLUE}│ PHP-FPM Max Children          │ ${PHP_MAX_CHILDREN}个                   │ ${php_fpm_max_children:0:8} │ ${php_fpm_max_children_status} │${NC}"
-    echo -e "${BLUE}│ PHP-FPM Start Servers        │ 30个                   │ ${php_fpm_start_servers:0:8} │ ${php_fpm_start_servers_status} │${NC}"
-    echo -e "${BLUE}│ PHP-FPM Min Spare Servers    │ 24个                   │ ${php_fpm_min_spare:0:8} │ ${php_fpm_min_spare_status} │${NC}"
-    echo -e "${BLUE}│ PHP-FPM Max Spare Servers    │ 40个                   │ ${php_fpm_max_spare:0:8} │ ${php_fpm_max_spare_status} │${NC}"
+    echo -e "${BLUE}│ PHP-FPM Start Servers        │ ${expected_start_servers}个                   │ ${php_fpm_start_servers:0:8} │ ${php_fpm_start_servers_status} │${NC}"
+    echo -e "${BLUE}│ PHP-FPM Min Spare Servers    │ ${expected_min_spare}个                   │ ${php_fpm_min_spare:0:8} │ ${php_fpm_min_spare_status} │${NC}"
+    echo -e "${BLUE}│ PHP-FPM Max Spare Servers    │ ${expected_max_spare}个                   │ ${php_fpm_max_spare:0:8} │ ${php_fpm_max_spare_status} │${NC}"
     echo -e "${BLUE}│ PHP-FPM Max Requests         │ 500                    │ ${php_fpm_max_requests:0:8} │ ${php_fpm_max_requests_status} │${NC}"
     
     # PHP内存限制检查
@@ -865,11 +895,11 @@ show_optimization_status() {
     # PHP-FPM检查
     [[ "$php_fpm_max_children" == "$PHP_MAX_CHILDREN" ]] && ((passed_checks++))
     ((total_checks++))
-    [[ "$php_fpm_start_servers" == "30" ]] && ((passed_checks++))
+    [[ "$php_fpm_start_servers" == "$expected_start_servers" ]] && ((passed_checks++))
     ((total_checks++))
-    [[ "$php_fpm_min_spare" == "24" ]] && ((passed_checks++))
+    [[ "$php_fpm_min_spare" == "$expected_min_spare" ]] && ((passed_checks++))
     ((total_checks++))
-    [[ "$php_fpm_max_spare" == "40" ]] && ((passed_checks++))
+    [[ "$php_fpm_max_spare" == "$expected_max_spare" ]] && ((passed_checks++))
     ((total_checks++))
     [[ "$php_fpm_max_requests" == "500" ]] && ((passed_checks++))
     ((total_checks++))
