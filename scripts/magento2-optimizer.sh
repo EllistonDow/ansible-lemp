@@ -740,33 +740,170 @@ restart_services() {
 }
 
 show_optimization_status() {
-    echo -e "${INFO_MARK} ${CYAN}Magento2优化状态:${NC}"
+    # 计算建议配置
+    calculate_memory_allocation $TOTAL_RAM_GB
+    
+    echo -e "${INFO_MARK} ${CYAN}Magento2优化状态详细对比:${NC}"
+    echo
+    echo -e "${YELLOW}📊 配置对比表 (建议值 vs 当前值):${NC}"
+    echo -e "${BLUE}┌─────────────────────────────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${BLUE}│ 服务配置项                    │ 建议值 (${TOTAL_RAM_GB}GB) │ 当前值 │ 状态 │${NC}"
+    echo -e "${BLUE}├─────────────────────────────────────────────────────────────────────────────────┤${NC}"
+    
+    # MySQL配置检查
+    local mysql_buffer=$(sudo grep "innodb_buffer_pool_size" "$MYSQL_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*= *//' || echo "未设置")
+    local mysql_instances=$(sudo grep "innodb_buffer_pool_instances" "$MYSQL_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*= *//' || echo "未设置")
+    local mysql_connections=$(sudo grep "max_connections" "$MYSQL_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*= *//' || echo "未设置")
+    local mysql_thread_cache=$(sudo grep "thread_cache_size" "$MYSQL_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*= *//' || echo "未设置")
+    
+    # MySQL状态检查
+    local mysql_buffer_status="❌"
+    [[ "$mysql_buffer" == "${MYSQL_MEMORY_GB}G" ]] && mysql_buffer_status="✅"
+    local mysql_instances_status="❌"
+    [[ "$mysql_instances" == "$MYSQL_INSTANCES" ]] && mysql_instances_status="✅"
+    local mysql_connections_status="❌"
+    [[ "$mysql_connections" == "500" ]] && mysql_connections_status="✅"
+    local mysql_thread_cache_status="❌"
+    [[ "$mysql_thread_cache" == "50" ]] && mysql_thread_cache_status="✅"
+    
+    echo -e "${BLUE}│ MySQL InnoDB Buffer Pool     │ ${MYSQL_MEMORY_GB}G                    │ ${mysql_buffer:0:8} │ ${mysql_buffer_status} │${NC}"
+    echo -e "${BLUE}│ MySQL Buffer Pool Instances  │ ${MYSQL_INSTANCES}个                   │ ${mysql_instances:0:8} │ ${mysql_instances_status} │${NC}"
+    echo -e "${BLUE}│ MySQL Max Connections        │ 500                    │ ${mysql_connections:0:8} │ ${mysql_connections_status} │${NC}"
+    echo -e "${BLUE}│ MySQL Thread Cache Size      │ 50                     │ ${mysql_thread_cache:0:8} │ ${mysql_thread_cache_status} │${NC}"
+    
+    # OpenSearch配置检查
+    local opensearch_heap=$(sudo grep "^-Xmx" "$OPENSEARCH_JVM_CONFIG" 2>/dev/null | sed 's/.*-Xmx//' || echo "未设置")
+    local opensearch_status="❌"
+    [[ "$opensearch_heap" == "${OPENSEARCH_MEMORY_GB}g" ]] && opensearch_status="✅"
+    
+    echo -e "${BLUE}│ OpenSearch JVM Heap Size     │ ${OPENSEARCH_MEMORY_GB}g                   │ ${opensearch_heap:0:8} │ ${opensearch_status} │${NC}"
+    
+    # Valkey配置检查
+    local valkey_memory=$(sudo grep "^maxmemory " "$VALKEY_CONFIG" 2>/dev/null | head -1 | sed 's/.*maxmemory //' || echo "未设置")
+    local valkey_policy=$(sudo grep "^maxmemory-policy " "$VALKEY_CONFIG" 2>/dev/null | head -1 | sed 's/.*maxmemory-policy //' || echo "未设置")
+    local valkey_memory_status="❌"
+    [[ "$valkey_memory" == "${VALKEY_MEMORY_GB}gb" ]] && valkey_memory_status="✅"
+    local valkey_policy_status="❌"
+    [[ "$valkey_policy" == "allkeys-lru" ]] && valkey_policy_status="✅"
+    
+    echo -e "${BLUE}│ Valkey Max Memory            │ ${VALKEY_MEMORY_GB}gb                   │ ${valkey_memory:0:8} │ ${valkey_memory_status} │${NC}"
+    echo -e "${BLUE}│ Valkey Eviction Policy       │ allkeys-lru            │ ${valkey_policy:0:8} │ ${valkey_policy_status} │${NC}"
+    
+    # PHP-FPM配置检查
+    local php_fpm_max_children=$(sudo grep "pm.max_children" "$PHP_FPM_CONFIG" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
+    local php_fpm_start_servers=$(sudo grep "pm.start_servers" "$PHP_FPM_CONFIG" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
+    local php_fpm_min_spare=$(sudo grep "pm.min_spare_servers" "$PHP_FPM_CONFIG" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
+    local php_fpm_max_spare=$(sudo grep "pm.max_spare_servers" "$PHP_FPM_CONFIG" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
+    local php_fpm_max_requests=$(sudo grep "pm.max_requests" "$PHP_FPM_CONFIG" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
+    
+    local php_fpm_max_children_status="❌"
+    [[ "$php_fpm_max_children" == "$PHP_MAX_CHILDREN" ]] && php_fpm_max_children_status="✅"
+    local php_fpm_start_servers_status="❌"
+    [[ "$php_fpm_start_servers" == "30" ]] && php_fpm_start_servers_status="✅"
+    local php_fpm_min_spare_status="❌"
+    [[ "$php_fpm_min_spare" == "24" ]] && php_fpm_min_spare_status="✅"
+    local php_fpm_max_spare_status="❌"
+    [[ "$php_fpm_max_spare" == "40" ]] && php_fpm_max_spare_status="✅"
+    local php_fpm_max_requests_status="❌"
+    [[ "$php_fpm_max_requests" == "500" ]] && php_fpm_max_requests_status="✅"
+    
+    echo -e "${BLUE}│ PHP-FPM Max Children          │ ${PHP_MAX_CHILDREN}个                   │ ${php_fpm_max_children:0:8} │ ${php_fpm_max_children_status} │${NC}"
+    echo -e "${BLUE}│ PHP-FPM Start Servers        │ 30个                   │ ${php_fpm_start_servers:0:8} │ ${php_fpm_start_servers_status} │${NC}"
+    echo -e "${BLUE}│ PHP-FPM Min Spare Servers    │ 24个                   │ ${php_fpm_min_spare:0:8} │ ${php_fpm_min_spare_status} │${NC}"
+    echo -e "${BLUE}│ PHP-FPM Max Spare Servers    │ 40个                   │ ${php_fpm_max_spare:0:8} │ ${php_fpm_max_spare_status} │${NC}"
+    echo -e "${BLUE}│ PHP-FPM Max Requests         │ 500                    │ ${php_fpm_max_requests:0:8} │ ${php_fpm_max_requests_status} │${NC}"
+    
+    # PHP内存限制检查
+    local php_fpm_memory=$(sudo grep "memory_limit" "$PHP_FPM_INI_CONFIG" 2>/dev/null | grep -v "^;" | sed 's/.*= *//' || echo "未设置")
+    local php_cli_memory=$(sudo grep "memory_limit" "$PHP_CLI_INI_CONFIG" 2>/dev/null | grep -v "^;" | sed 's/.*= *//' || echo "未设置")
+    local php_fpm_memory_status="❌"
+    [[ "$php_fpm_memory" == "2G" ]] && php_fpm_memory_status="✅"
+    local php_cli_memory_status="❌"
+    [[ "$php_cli_memory" == "4G" ]] && php_cli_memory_status="✅"
+    
+    echo -e "${BLUE}│ PHP-FPM Memory Limit         │ 2G                     │ ${php_fpm_memory:0:8} │ ${php_fpm_memory_status} │${NC}"
+    echo -e "${BLUE}│ PHP-CLI Memory Limit         │ 4G                     │ ${php_cli_memory:0:8} │ ${php_cli_memory_status} │${NC}"
+    
+    # Nginx配置检查
+    local nginx_workers=$(sudo grep "worker_processes" "$NGINX_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*worker_processes *//' | sed 's/;//' || echo "未设置")
+    local nginx_connections=$(sudo grep "worker_connections" "$NGINX_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*worker_connections *//' | sed 's/;//' || echo "未设置")
+    local nginx_workers_status="❌"
+    [[ "$nginx_workers" == "auto" ]] && nginx_workers_status="✅"
+    local nginx_connections_status="❌"
+    [[ "$nginx_connections" == "4096" ]] && nginx_connections_status="✅"
+    
+    echo -e "${BLUE}│ Nginx Worker Processes       │ auto                   │ ${nginx_workers:0:8} │ ${nginx_workers_status} │${NC}"
+    echo -e "${BLUE}│ Nginx Worker Connections     │ 4096                   │ ${nginx_connections:0:8} │ ${nginx_connections_status} │${NC}"
+    
+    echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────────┘${NC}"
     echo
     
-    # 检查MySQL设置
-    local mysql_buffer=$(sudo grep "innodb_buffer_pool_size" "$MYSQL_CONFIG" 2>/dev/null | grep -v "^#" || echo "未优化")
-    echo -e "  MySQL InnoDB Buffer Pool: ${mysql_buffer##*=}"
+    # 计算优化状态
+    local total_checks=0
+    local passed_checks=0
     
-    # 检查PHP-FPM设置
-    local php_fpm_memory=$(sudo grep "memory_limit" "$PHP_FPM_INI_CONFIG" 2>/dev/null | grep -v "^;" || echo "未优化")
-    echo -e "  PHP-FPM Memory Limit: ${php_fpm_memory##*=}"
+    # MySQL检查
+    [[ "$mysql_buffer" == "${MYSQL_MEMORY_GB}G" ]] && ((passed_checks++))
+    ((total_checks++))
+    [[ "$mysql_instances" == "$MYSQL_INSTANCES" ]] && ((passed_checks++))
+    ((total_checks++))
+    [[ "$mysql_connections" == "500" ]] && ((passed_checks++))
+    ((total_checks++))
+    [[ "$mysql_thread_cache" == "50" ]] && ((passed_checks++))
+    ((total_checks++))
     
-    # 检查PHP-CLI设置
-    local php_cli_memory=$(sudo grep "memory_limit" "$PHP_CLI_INI_CONFIG" 2>/dev/null | grep -v "^;" || echo "未优化")
-    echo -e "  PHP-CLI Memory Limit: ${php_cli_memory##*=}"
+    # OpenSearch检查
+    [[ "$opensearch_heap" == "${OPENSEARCH_MEMORY_GB}g" ]] && ((passed_checks++))
+    ((total_checks++))
     
-    # 检查Nginx工作进程
-    local nginx_workers=$(sudo grep "worker_processes" "$NGINX_CONFIG" 2>/dev/null | grep -v "^#" || echo "未优化")
-    echo -e "  Nginx Worker Processes: ${nginx_workers##*worker_processes}"
+    # Valkey检查
+    [[ "$valkey_memory" == "${VALKEY_MEMORY_GB}gb" ]] && ((passed_checks++))
+    ((total_checks++))
+    [[ "$valkey_policy" == "allkeys-lru" ]] && ((passed_checks++))
+    ((total_checks++))
     
-    # 检查Valkey内存
-    local valkey_memory=$(sudo grep "maxmemory" "$VALKEY_CONFIG" 2>/dev/null | grep -v "^#" || echo "未优化")
-    echo -e "  Valkey Max Memory: ${valkey_memory##*maxmemory}"
+    # PHP-FPM检查
+    [[ "$php_fpm_max_children" == "$PHP_MAX_CHILDREN" ]] && ((passed_checks++))
+    ((total_checks++))
+    [[ "$php_fpm_start_servers" == "30" ]] && ((passed_checks++))
+    ((total_checks++))
+    [[ "$php_fpm_min_spare" == "24" ]] && ((passed_checks++))
+    ((total_checks++))
+    [[ "$php_fpm_max_spare" == "40" ]] && ((passed_checks++))
+    ((total_checks++))
+    [[ "$php_fpm_max_requests" == "500" ]] && ((passed_checks++))
+    ((total_checks++))
     
-    # 检查OpenSearch堆内存
-    local opensearch_heap=$(sudo grep "^-Xmx" "$OPENSEARCH_JVM_CONFIG" 2>/dev/null || echo "未优化")
-    echo -e "  OpenSearch Heap Size: ${opensearch_heap##*-Xmx}"
+    # PHP内存检查
+    [[ "$php_fpm_memory" == "2G" ]] && ((passed_checks++))
+    ((total_checks++))
+    [[ "$php_cli_memory" == "4G" ]] && ((passed_checks++))
+    ((total_checks++))
     
+    # Nginx检查
+    [[ "$nginx_workers" == "auto" ]] && ((passed_checks++))
+    ((total_checks++))
+    [[ "$nginx_connections" == "4096" ]] && ((passed_checks++))
+    ((total_checks++))
+    
+    # 显示优化状态总结
+    local optimization_percentage=$((passed_checks * 100 / total_checks))
+    echo -e "${CYAN}📈 优化状态总结:${NC}"
+    echo -e "  ${GREEN}✅ 已优化: ${passed_checks}/${total_checks} 项配置${NC}"
+    echo -e "  ${YELLOW}📊 优化完成度: ${optimization_percentage}%${NC}"
+    
+    if [[ $optimization_percentage -ge 90 ]]; then
+        echo -e "  ${GREEN}🎉 系统已完全优化！${NC}"
+    elif [[ $optimization_percentage -ge 70 ]]; then
+        echo -e "  ${YELLOW}⚠️  系统大部分已优化，建议运行完整优化${NC}"
+    else
+        echo -e "  ${RED}❌ 系统需要优化，建议运行: ./magento2-optimizer.sh ${TOTAL_RAM_GB} optimize${NC}"
+    fi
+    
+    echo
+    echo -e "${CYAN}💡 提示:${NC}"
+    echo -e "  • 运行 ${GREEN}./magento2-optimizer.sh ${TOTAL_RAM_GB} optimize${NC} 应用完整优化"
+    echo -e "  • 运行 ${YELLOW}./magento2-optimizer.sh ${TOTAL_RAM_GB} restore${NC} 还原原始配置"
     echo
 }
 
