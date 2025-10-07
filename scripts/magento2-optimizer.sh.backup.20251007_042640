@@ -21,8 +21,6 @@ WARNING_MARK="⚠️"
 INFO_MARK="ℹ️"
 ROCKET="🚀"
 GEAR="⚙️"
-MONITOR_MARK="📊"
-ALERT_MARK="🚨"
 
 # 配置文件路径
 MYSQL_CONFIG="/etc/mysql/mysql.conf.d/mysqld.cnf"
@@ -36,10 +34,9 @@ OPENSEARCH_JVM_CONFIG="/etc/opensearch/jvm.options"
 BACKUP_DIR="/opt/lemp-backups/magento2-optimizer"
 
 # 动态内存配置
-TOTAL_RAM_GB=64  # 默认64GB，将在main函数中设置
-SITES_COUNT=4    # 默认4个站点
+TOTAL_RAM_GB=${1:-64}  # 默认64GB，可通过参数指定
+SITES_COUNT=4
 CPU_CORES=$(nproc)
-CURRENT_LOAD=$(uptime | awk -F'load average:' '{print $2}' | awk '{print $1}' | sed 's/,//')
 
 # 内存分配计算函数
 calculate_memory_allocation() {
@@ -68,164 +65,23 @@ calculate_memory_allocation() {
         MYSQL_MEMORY_GB=$((MYSQL_MEMORY_GB + extra_memory))
     fi
     
-    # PHP-FPM进程数计算 (自适应调整，避免过度优化)
-    # 基于CPU核心数和系统负载动态调整
-    local base_processes=$((CPU_CORES * 8))  # 每核心8个进程作为基础
-    local load_factor=1
+    # PHP-FPM进程数计算 (每个进程2GB内存限制，但实际使用约100MB)
+    # 为PHP-FPM预留足够内存，但不超过总内存的20%
+    local php_max_percent=20
+    local php_memory_gb=$((total_gb * php_max_percent / 100))
+    PHP_MAX_CHILDREN=$((php_memory_gb * 10))  # 每GB支持10个进程
     
-    # 根据系统负载调整进程数
-    if (( $(echo "$CURRENT_LOAD > $CPU_CORES" | bc -l) )); then
-        load_factor=0.8  # 高负载时减少进程数
-    elif (( $(echo "$CURRENT_LOAD < $CPU_CORES * 0.5" | bc -l) )); then
-        load_factor=1.2  # 低负载时可适当增加
-    fi
-    
-    PHP_MAX_CHILDREN=$(echo "$base_processes * $load_factor" | bc | cut -d. -f1)
-    
-    # 确保最小和最大配置
+    # 确保最小配置
     [[ $MYSQL_MEMORY_GB -lt 8 ]] && MYSQL_MEMORY_GB=8
     [[ $OPENSEARCH_MEMORY_GB -lt 4 ]] && OPENSEARCH_MEMORY_GB=4
     [[ $VALKEY_MEMORY_GB -lt 2 ]] && VALKEY_MEMORY_GB=2
     [[ $PHP_MAX_CHILDREN -lt 20 ]] && PHP_MAX_CHILDREN=20
-    [[ $PHP_MAX_CHILDREN -gt 150 ]] && PHP_MAX_CHILDREN=150  # 降低最大进程数限制
+    [[ $PHP_MAX_CHILDREN -gt 200 ]] && PHP_MAX_CHILDREN=200  # 限制最大进程数
     
     # MySQL实例数计算 (每4GB一个实例，最少8个，最多32个)
     MYSQL_INSTANCES=$((MYSQL_MEMORY_GB / 4))
     [[ $MYSQL_INSTANCES -lt 8 ]] && MYSQL_INSTANCES=8
     [[ $MYSQL_INSTANCES -gt 32 ]] && MYSQL_INSTANCES=32
-    
-    # 计算动态配置值
-    MYSQL_MAX_CONNECTIONS=$((CPU_CORES * 50 + 100))
-    MYSQL_THREAD_CACHE=$((CPU_CORES * 5))
-    NGINX_WORKER_CONNECTIONS=$((CPU_CORES * 1000 + 1000))
-}
-
-# 系统监控和告警函数
-monitor_system_resources() {
-    echo -e "${MONITOR_MARK} ${CYAN}系统资源监控...${NC}"
-    
-    # 内存使用监控
-    local memory_usage=$(free | grep Mem | awk '{printf "%.1f", $3/$2 * 100.0}')
-    local memory_used_gb=$(free -g | grep Mem | awk '{print $3}')
-    local memory_total_gb=$(free -g | grep Mem | awk '{print $2}')
-    
-    echo -e "  ${INFO_MARK} 内存使用: ${memory_used_gb}GB/${memory_total_gb}GB (${memory_usage}%)"
-    
-    # CPU负载监控
-    local cpu_load=$(uptime | awk -F'load average:' '{print $2}' | awk '{print $1}' | sed 's/,//')
-    local cpu_cores=$CPU_CORES
-    local load_percentage=$(echo "scale=1; $cpu_load * 100 / $cpu_cores" | bc)
-    
-    echo -e "  ${INFO_MARK} CPU负载: ${cpu_load} (${load_percentage}% of ${cpu_cores} cores)"
-    
-    # 磁盘使用监控
-    local disk_usage=$(df -h / | awk 'NR==2 {print $5}' | sed 's/%//')
-    echo -e "  ${INFO_MARK} 磁盘使用: ${disk_usage}%"
-    
-    # Swap使用监控
-    local swap_total=$(free | grep Swap | awk '{print $2}')
-    local swap_used=$(free | grep Swap | awk '{print $3}')
-    local swap_percentage=0
-    if [[ $swap_total -gt 0 ]]; then
-        swap_percentage=$(echo "scale=1; $swap_used * 100 / $swap_total" | bc)
-    fi
-    echo -e "  ${INFO_MARK} Swap使用: ${swap_used}KB/${swap_total}KB (${swap_percentage}%)"
-    
-    # 告警检查
-    if (( $(echo "$memory_usage > 90" | bc -l) )); then
-        echo -e "  ${ALERT_MARK} ${RED}警告: 内存使用率过高 (${memory_usage}%)${NC}"
-    fi
-    
-    if (( $(echo "$cpu_load > $cpu_cores" | bc -l) )); then
-        echo -e "  ${ALERT_MARK} ${RED}警告: CPU负载过高 (${cpu_load} > ${cpu_cores})${NC}"
-    fi
-    
-    if [[ $disk_usage -gt 85 ]]; then
-        echo -e "  ${ALERT_MARK} ${RED}警告: 磁盘空间不足 (${disk_usage}%)${NC}"
-    fi
-    
-    if (( $(echo "$swap_percentage > 50" | bc -l) )); then
-        echo -e "  ${ALERT_MARK} ${RED}警告: Swap使用率过高 (${swap_percentage}%)${NC}"
-        echo -e "  ${INFO_MARK} 建议运行: sudo swapoff -a && sudo swapon -a"
-    fi
-    
-    echo
-}
-
-# 服务状态监控
-monitor_services_status() {
-    echo -e "${MONITOR_MARK} ${CYAN}服务状态监控...${NC}"
-    
-    local services=("mysql" "php8.3-fpm" "nginx" "valkey" "opensearch")
-    
-    for service in "${services[@]}"; do
-        if systemctl is-active --quiet "$service"; then
-            echo -e "  ${CHECK_MARK} ${service}: 运行中"
-        else
-            echo -e "  ${CROSS_MARK} ${service}: 未运行"
-        fi
-    done
-    echo
-}
-
-# 性能基准测试函数
-performance_benchmark() {
-    echo -e "${ROCKET} ${CYAN}性能基准测试...${NC}"
-    
-    # MySQL连接测试
-    echo -e "  ${INFO_MARK} 测试MySQL连接..."
-    if mysql -e "SELECT 1;" >/dev/null 2>&1; then
-        local mysql_time=$(time (mysql -e "SELECT COUNT(*) FROM information_schema.tables;" >/dev/null 2>&1) 2>&1 | grep real | awk '{print $2}')
-        echo -e "  ${CHECK_MARK} MySQL查询响应: ${mysql_time}"
-    else
-        echo -e "  ${CROSS_MARK} MySQL连接失败"
-    fi
-    
-    # OpenSearch连接测试
-    echo -e "  ${INFO_MARK} 测试OpenSearch连接..."
-    if curl -s http://localhost:9200 >/dev/null 2>&1; then
-        local es_time=$(curl -s -w "%{time_total}" -o /dev/null http://localhost:9200/_cluster/health)
-        echo -e "  ${CHECK_MARK} OpenSearch响应: ${es_time}s"
-    else
-        echo -e "  ${CROSS_MARK} OpenSearch连接失败"
-    fi
-    
-    # Valkey连接测试
-    echo -e "  ${INFO_MARK} 测试Valkey连接..."
-    if redis-cli ping >/dev/null 2>&1; then
-        local redis_time=$(time (redis-cli set test_key "test_value" >/dev/null 2>&1) 2>&1 | grep real | awk '{print $2}')
-        echo -e "  ${CHECK_MARK} Valkey操作响应: ${redis_time}"
-        redis-cli del test_key >/dev/null 2>&1
-    else
-        echo -e "  ${CROSS_MARK} Valkey连接失败"
-    fi
-    
-    echo
-}
-
-# 自适应配置建议函数
-adaptive_config_suggestions() {
-    echo -e "${INFO_MARK} ${CYAN}自适应配置建议...${NC}"
-    
-    # 根据当前负载建议调整
-    local current_load=$CURRENT_LOAD
-    local cpu_cores=$CPU_CORES
-    
-    if (( $(echo "$current_load > $cpu_cores * 0.8" | bc -l) )); then
-        echo -e "  ${WARNING_MARK} 系统负载较高，建议:"
-        echo -e "    • 减少PHP-FPM进程数"
-        echo -e "    • 降低MySQL连接数"
-        echo -e "    • 考虑启用更多缓存"
-    elif (( $(echo "$current_load < $cpu_cores * 0.3" | bc -l) )); then
-        echo -e "  ${INFO_MARK} 系统负载较低，可以:"
-        echo -e "    • 适当增加PHP-FPM进程数"
-        echo -e "    • 增加MySQL连接数"
-        echo -e "    • 优化缓存策略"
-    else
-        echo -e "  ${CHECK_MARK} 系统负载正常，当前配置合适"
-    fi
-    
-    echo
 }
 
 print_header() {
@@ -264,9 +120,6 @@ print_help() {
     echo -e "  ${GREEN}optimize${NC}         - 应用Magento2性能优化配置"
     echo -e "  ${GREEN}restore${NC}          - 还原到原始配置"
     echo -e "  ${GREEN}status${NC}           - 显示当前优化状态"
-    echo -e "  ${GREEN}monitor${NC}         - 系统资源监控和告警"
-    echo -e "  ${GREEN}benchmark${NC}       - 性能基准测试"
-    echo -e "  ${GREEN}suggest${NC}         - 自适应配置建议"
     echo -e "  ${GREEN}force-reoptimize${NC} - 强制重新优化（清理混合配置）"
     echo -e "  ${GREEN}help${NC}             - 显示此帮助信息"
     echo
@@ -284,35 +137,23 @@ print_help() {
     echo -e "  ${GREEN}restore valkey${NC}   - 仅还原Valkey配置"
     echo -e "  ${GREEN}restore opensearch${NC} - 仅还原OpenSearch配置"
     echo
-    echo -e "${YELLOW}内存分配策略 (自适应优化):${NC}"
+    echo -e "${YELLOW}内存分配策略:${NC}"
     echo -e "  • MySQL: 25% 总内存 (InnoDB Buffer Pool)"
     echo -e "  • OpenSearch: 12% 总内存 (JVM Heap, 最大32GB)"
     echo -e "  • Valkey: 9% 总内存 (Cache)"
     echo -e "  • 系统缓存: 31% 总内存 (内核和文件系统)"
     echo -e "  • 其他服务: 23% 总内存 (Nginx, Varnish等)"
-    echo -e "  • PHP-FPM: 基于CPU核心数动态调整 (每核心8个进程)"
-    echo -e "  • MySQL连接: 基于CPU核心数动态调整 (每核心50个连接)"
-    echo -e "  • Nginx连接: 基于CPU核心数动态调整 (每核心1000个连接)"
     echo
     echo -e "${YELLOW}⚠️  OpenSearch 重要说明:${NC}"
     echo -e "  • JVM堆内存建议不超过32GB（压缩指针限制）"
     echo -e "  • 超过32GB后压缩指针失效，实际可用内存反而减少"
     echo -e "  • 多余内存会自动分配给MySQL以提升性能"
     echo
-    echo -e "${YELLOW}多站点支持:${NC}"
-    echo -e "  • 支持${SITES_COUNT}个Magento2站点同时运行"
-    echo -e "  • OpenSearch索引隔离: site{N}_catalog_*"
-    echo -e "  • 资源配额限制: 每站点最多20个分片"
-    echo -e "  • 自动索引模板创建和管理"
-    echo
     echo -e "${YELLOW}示例:${NC}"
     echo -e "  $0 64 optimize           # 64GB服务器完整优化"
     echo -e "  $0 128 optimize mysql   # 128GB服务器仅优化MySQL"
     echo -e "  $0 256 restore nginx     # 256GB服务器还原Nginx"
     echo -e "  $0 64 status            # 查看64GB服务器优化状态"
-    echo -e "  $0 128 monitor          # 系统资源监控和告警"
-    echo -e "  $0 64 benchmark        # 性能基准测试"
-    echo -e "  $0 128 suggest          # 自适应配置建议"
     echo -e "  $0 128 force-reoptimize # 强制重新优化128GB配置（清理混合配置）"
     echo
     echo -e "${YELLOW}内存配置对比:${NC}"
@@ -401,10 +242,10 @@ read_buffer_size = 2M
 read_rnd_buffer_size = 8M
 join_buffer_size = 8M
 
-# Connection Settings (自适应调整，避免过度优化)
-max_connections = ${MYSQL_MAX_CONNECTIONS}
+# Connection Settings
+max_connections = 500
 max_connect_errors = 1000000
-thread_cache_size = ${MYSQL_THREAD_CACHE}
+thread_cache_size = 50
 thread_stack = 256K
 interactive_timeout = 3600
 wait_timeout = 3600
@@ -653,7 +494,7 @@ worker_rlimit_nofile 65535;
 pid /run/nginx.pid;
 
 events {
-    worker_connections ${NGINX_WORKER_CONNECTIONS};
+    worker_connections 4096;
     use epoll;
     multi_accept on;
 }
@@ -834,10 +675,10 @@ optimize_opensearch() {
     
     # 创建优化的OpenSearch配置
     sudo tee "$OPENSEARCH_CONFIG" > /dev/null << EOF
-# OpenSearch Configuration for Magento2 Multi-Site
-# Optimized for ${TOTAL_RAM_GB}GB RAM server with ${SITES_COUNT} Magento2 sites
+# OpenSearch Configuration for Magento2
+# Optimized for ${TOTAL_RAM_GB}GB RAM server with multiple Magento2 sites
 
-cluster.name: magento2-multisite-cluster
+cluster.name: magento2-cluster
 node.name: magento2-node-1
 path.data: /var/lib/opensearch
 path.logs: /var/log/opensearch
@@ -872,26 +713,9 @@ thread_pool.write.queue_size: 200
 indices.requests.cache.size: 2%
 indices.fielddata.cache.size: 20%
 
-# Magento2 Multi-Site Specific Settings
+# Magento2 Specific Settings
 action.auto_create_index: true
 action.destructive_requires_name: false
-
-# Multi-Site Index Isolation Settings
-index.mapping.total_fields.limit: 1000
-index.number_of_shards: 1
-index.number_of_replicas: 0
-index.refresh_interval: 30s
-
-# Site-specific index templates (will be created via API)
-# Pattern: site{N}_catalog_product, site{N}_catalog_category, etc.
-# Each site gets isolated indices with resource quotas
-
-# Resource Quotas for Multi-Site
-cluster.routing.allocation.total_shards_per_node: $((SITES_COUNT * 20))
-cluster.routing.allocation.disk.threshold_enabled: true
-cluster.routing.allocation.disk.watermark.low: 85%
-cluster.routing.allocation.disk.watermark.high: 90%
-cluster.routing.allocation.disk.watermark.flood_stage: 95%
 
 # Security Settings (如果不需要可以禁用)
 plugins.security.disabled: true
@@ -1049,17 +873,6 @@ restart_services() {
     sudo systemctl restart nginx && echo -e "  ${CHECK_MARK} Nginx已重启"
     sudo systemctl restart valkey && echo -e "  ${CHECK_MARK} Valkey已重启"
     sudo systemctl restart opensearch && echo -e "  ${CHECK_MARK} OpenSearch已重启"
-    
-    # 清理Swap空间 (服务重启后释放Swap)
-    echo -e "  ${INFO_MARK} 清理Swap空间..."
-    local swap_before=$(free | grep Swap | awk '{print $3}')
-    if [[ $swap_before -gt 0 ]]; then
-        sudo swapoff -a && sudo swapon -a
-        local swap_after=$(free | grep Swap | awk '{print $3}')
-        echo -e "  ${CHECK_MARK} Swap已清理: ${swap_before}KB → ${swap_after}KB"
-    else
-        echo -e "  ${INFO_MARK} Swap使用率为0%，无需清理"
-    fi
 }
 
 show_optimization_status() {
@@ -1074,10 +887,10 @@ show_optimization_status() {
     echo -e "${BLUE}├─────────────────────────────────────────────────────────────────────────────────┤${NC}"
     
     # MySQL配置检查
-    local mysql_buffer=$(sudo grep "innodb_buffer_pool_size" "$MYSQL_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*= *//' | sed 's/#.*//' | sed 's/ *$//' || echo "未设置")
-    local mysql_instances=$(sudo grep "innodb_buffer_pool_instances" "$MYSQL_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*= *//' | sed 's/#.*//' | sed 's/ *$//' || echo "未设置")
-    local mysql_connections=$(sudo grep "max_connections" "$MYSQL_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*= *//' | sed 's/#.*//' | sed 's/ *$//' || echo "未设置")
-    local mysql_thread_cache=$(sudo grep "thread_cache_size" "$MYSQL_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*= *//' | sed 's/#.*//' | sed 's/ *$//' || echo "未设置")
+    local mysql_buffer=$(sudo grep "innodb_buffer_pool_size" "$MYSQL_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*= *//' || echo "未设置")
+    local mysql_instances=$(sudo grep "innodb_buffer_pool_instances" "$MYSQL_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*= *//' || echo "未设置")
+    local mysql_connections=$(sudo grep "max_connections" "$MYSQL_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*= *//' || echo "未设置")
+    local mysql_thread_cache=$(sudo grep "thread_cache_size" "$MYSQL_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*= *//' || echo "未设置")
     
     # MySQL状态检查
     local mysql_buffer_status="❌"
@@ -1085,14 +898,14 @@ show_optimization_status() {
     local mysql_instances_status="❌"
     [[ "$mysql_instances" == "$MYSQL_INSTANCES" ]] && mysql_instances_status="✅"
     local mysql_connections_status="❌"
-    [[ "$mysql_connections" == "$MYSQL_MAX_CONNECTIONS" ]] && mysql_connections_status="✅"
+    [[ "$mysql_connections" == "500" ]] && mysql_connections_status="✅"
     local mysql_thread_cache_status="❌"
-    [[ "$mysql_thread_cache" == "$MYSQL_THREAD_CACHE" ]] && mysql_thread_cache_status="✅"
+    [[ "$mysql_thread_cache" == "50" ]] && mysql_thread_cache_status="✅"
     
     echo -e "${BLUE}│ MySQL InnoDB Buffer Pool     │ ${MYSQL_MEMORY_GB}G                    │ ${mysql_buffer:0:8} │ ${mysql_buffer_status} │${NC}"
     echo -e "${BLUE}│ MySQL Buffer Pool Instances  │ ${MYSQL_INSTANCES}个                   │ ${mysql_instances:0:8} │ ${mysql_instances_status} │${NC}"
-    echo -e "${BLUE}│ MySQL Max Connections        │ ${MYSQL_MAX_CONNECTIONS}                    │ ${mysql_connections:0:8} │ ${mysql_connections_status} │${NC}"
-    echo -e "${BLUE}│ MySQL Thread Cache Size      │ ${MYSQL_THREAD_CACHE}                     │ ${mysql_thread_cache:0:8} │ ${mysql_thread_cache_status} │${NC}"
+    echo -e "${BLUE}│ MySQL Max Connections        │ 500                    │ ${mysql_connections:0:8} │ ${mysql_connections_status} │${NC}"
+    echo -e "${BLUE}│ MySQL Thread Cache Size      │ 50                     │ ${mysql_thread_cache:0:8} │ ${mysql_thread_cache_status} │${NC}"
     
     # OpenSearch配置检查
     local opensearch_heap=$(sudo grep "^-Xmx" "$OPENSEARCH_JVM_CONFIG" 2>/dev/null | sed 's/.*-Xmx//' || echo "未设置")
@@ -1163,15 +976,15 @@ show_optimization_status() {
     echo -e "${BLUE}│ PHP-CLI Memory Limit         │ 4G                     │ ${php_cli_memory:0:8} │ ${php_cli_memory_status} │${NC}"
     
     # Nginx配置检查
-    local nginx_workers=$(sudo grep "worker_processes" "$NGINX_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*worker_processes *//' | sed 's/;//' | sed 's/#.*//' | sed 's/ *$//' || echo "未设置")
-    local nginx_connections=$(sudo grep "worker_connections" "$NGINX_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*worker_connections *//' | sed 's/;//' | sed 's/#.*//' | sed 's/ *$//' || echo "未设置")
+    local nginx_workers=$(sudo grep "worker_processes" "$NGINX_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*worker_processes *//' | sed 's/;//' || echo "未设置")
+    local nginx_connections=$(sudo grep "worker_connections" "$NGINX_CONFIG" 2>/dev/null | grep -v "^#" | sed 's/.*worker_connections *//' | sed 's/;//' || echo "未设置")
     local nginx_workers_status="❌"
     [[ "$nginx_workers" == "auto" ]] && nginx_workers_status="✅"
     local nginx_connections_status="❌"
-    [[ "$nginx_connections" == "$NGINX_WORKER_CONNECTIONS" ]] && nginx_connections_status="✅"
+    [[ "$nginx_connections" == "4096" ]] && nginx_connections_status="✅"
     
     echo -e "${BLUE}│ Nginx Worker Processes       │ auto                   │ ${nginx_workers:0:8} │ ${nginx_workers_status} │${NC}"
-    echo -e "${BLUE}│ Nginx Worker Connections     │ ${NGINX_WORKER_CONNECTIONS}                   │ ${nginx_connections:0:8} │ ${nginx_connections_status} │${NC}"
+    echo -e "${BLUE}│ Nginx Worker Connections     │ 4096                   │ ${nginx_connections:0:8} │ ${nginx_connections_status} │${NC}"
     
     echo -e "${BLUE}└─────────────────────────────────────────────────────────────────────────────────┘${NC}"
     echo
@@ -1185,9 +998,9 @@ show_optimization_status() {
     ((total_checks++))
     [[ "$mysql_instances" == "$MYSQL_INSTANCES" ]] && ((passed_checks++))
     ((total_checks++))
-    [[ "$mysql_connections" == "$MYSQL_MAX_CONNECTIONS" ]] && ((passed_checks++))
+    [[ "$mysql_connections" == "500" ]] && ((passed_checks++))
     ((total_checks++))
-    [[ "$mysql_thread_cache" == "$MYSQL_THREAD_CACHE" ]] && ((passed_checks++))
+    [[ "$mysql_thread_cache" == "50" ]] && ((passed_checks++))
     ((total_checks++))
     
     # OpenSearch检查
@@ -1221,7 +1034,7 @@ show_optimization_status() {
     # Nginx检查
     [[ "$nginx_workers" == "auto" ]] && ((passed_checks++))
     ((total_checks++))
-    [[ "$nginx_connections" == "$NGINX_WORKER_CONNECTIONS" ]] && ((passed_checks++))
+    [[ "$nginx_connections" == "4096" ]] && ((passed_checks++))
     ((total_checks++))
     
     # 显示优化状态总结
@@ -1319,10 +1132,6 @@ optimize_all() {
     echo -e "${ROCKET} ${GREEN}开始应用Magento2性能优化...${NC}"
     echo
     
-    # 优化前系统监控
-    echo -e "${MONITOR_MARK} ${CYAN}优化前系统状态:${NC}"
-    monitor_system_resources
-    
     optimize_mysql
     optimize_php_fpm
     optimize_nginx
@@ -1336,11 +1145,6 @@ optimize_all() {
     echo
     echo -e "${CHECK_MARK} ${GREEN}Magento2性能优化完成！${NC}"
     echo
-    
-    # 优化后系统监控
-    echo -e "${MONITOR_MARK} ${CYAN}优化后系统状态:${NC}"
-    monitor_system_resources
-    
     show_optimization_status
     
     echo -e "${INFO_MARK} ${CYAN}优化建议:${NC}"
@@ -1351,26 +1155,10 @@ optimize_all() {
     echo -e "  • 定期运行 magento setup:di:compile"
     echo -e "  • 重建OpenSearch索引: magento indexer:reindex catalogsearch_fulltext"
     echo
-    echo -e "${INFO_MARK} ${YELLOW}多站点配置建议:${NC}"
-    echo -e "  • 为每个站点创建独立的OpenSearch索引"
-    echo -e "  • 配置站点特定的缓存策略"
-    echo -e "  • 监控各站点的资源使用情况"
-    echo
     echo -e "${INFO_MARK} ${YELLOW}ModSecurity级别说明:${NC}"
     echo -e "  • 当前级别1: 极低敏感度，适合Magento2生产环境"
     echo -e "  • 如需调整: ./scripts/toggle-modsecurity.sh [0-10]"
     echo -e "  • 后台菜单问题: 确保级别设置为1-2"
-    echo
-    echo -e "${INFO_MARK} ${CYAN}新增功能:${NC}"
-    echo -e "  • 运行 ${GREEN}$0 ${TOTAL_RAM_GB} monitor${NC} 进行系统监控"
-    echo -e "  • 运行 ${GREEN}$0 ${TOTAL_RAM_GB} benchmark${NC} 进行性能测试"
-    echo -e "  • 运行 ${GREEN}$0 ${TOTAL_RAM_GB} suggest${NC} 获取配置建议"
-    echo
-    echo -e "${WARNING_MARK} ${YELLOW}重要提醒:${NC}"
-    echo -e "  • 优化脚本会完全重写MySQL、Nginx、OpenSearch配置"
-    echo -e "  • PHP-FPM和Valkey配置会追加新的优化设置"
-    echo -e "  • 如有自定义配置，请先备份或使用restore功能"
-    echo -e "  • 备份文件保存在: /opt/lemp-backups/magento2-optimizer/"
     echo
 }
 
@@ -1591,19 +1379,6 @@ main() {
         "status")
             print_header
             show_optimization_status
-            ;;
-        "monitor")
-            print_header
-            monitor_system_resources
-            monitor_services_status
-            ;;
-        "benchmark")
-            print_header
-            performance_benchmark
-            ;;
-        "suggest")
-            print_header
-            adaptive_config_suggestions
             ;;
         "force-reoptimize")
             print_header
