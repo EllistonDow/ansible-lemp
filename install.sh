@@ -150,7 +150,7 @@ case $choice in
         echo "4. RabbitMQ 4.1"
         echo "5. Valkey 8"
         echo "6. Varnish 7.6"
-        echo "7. Nginx 1.27.4+ModSecurity"
+        echo "7. Nginx 1.29.1 + ModSecurity"
         echo ""
         
         read -p "Select component to uninstall (1-7): " component
