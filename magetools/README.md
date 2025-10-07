@@ -4,6 +4,123 @@
 
 ## 可用工具
 
+### memory-monitor.sh
+
+智能内存监控和自动释放脚本。监控系统内存使用率，达到阈值时自动释放内存，确保系统稳定运行。
+
+#### 功能特性
+
+- ✅ 实时监控内存、Swap、CPU使用率
+- ✅ 可配置的警戒线阈值
+- ✅ 自动内存释放机制
+- ✅ 多级缓存清理策略
+- ✅ 持续监控和一次性检查模式
+- ✅ 详细的日志记录
+- ✅ 防重复运行保护
+
+#### 使用方法
+
+```bash
+# 持续监控模式（推荐用于生产环境）
+sudo ./memory-monitor.sh monitor
+
+# 一次性检查模式
+sudo ./memory-monitor.sh check
+
+# 立即执行内存释放
+sudo ./memory-monitor.sh release
+
+# 显示当前系统状态
+sudo ./memory-monitor.sh status
+
+# 自定义阈值监控
+sudo ./memory-monitor.sh monitor --threshold=90 --swap-threshold=20
+```
+
+#### 自动释放策略
+
+当内存使用率超过阈值时，脚本会自动执行以下清理操作：
+
+1. **系统缓存清理**：清理页面缓存、目录项缓存
+2. **Swap空间清理**：重置Swap使用
+3. **PHP缓存清理**：重新加载PHP-FPM，清理OPcache
+4. **Valkey缓存清理**：清理过期键
+5. **MySQL缓存清理**：刷新表缓存和查询缓存
+
+#### 配置参数
+
+- **内存阈值**：85%（默认）
+- **Swap阈值**：30%（默认）
+- **CPU阈值**：80%（默认）
+- **检查间隔**：30秒（监控模式）
+
+#### 日志文件
+
+- 位置：`/var/log/memory-monitor.log`
+- 记录所有操作和告警信息
+
+#### 自动化部署
+
+使用 `memory-monitor-service.sh` 脚本可以自动安装和管理服务：
+
+```bash
+# 安装为系统服务（推荐）
+sudo ./memory-monitor-service.sh install
+sudo ./memory-monitor-service.sh start
+
+# 安装定时任务
+sudo ./memory-monitor-service.sh cron-install
+
+# 查看服务状态
+sudo ./memory-monitor-service.sh status
+
+# 查看实时日志
+sudo ./memory-monitor-service.sh logs
+```
+
+#### 服务特性
+
+- ✅ **自动启动**：系统重启后自动启动
+- ✅ **自动重启**：服务异常时自动重启
+- ✅ **定时任务**：每5分钟检查，每天深度清理
+- ✅ **系统集成**：systemd服务管理
+- ✅ **日志记录**：systemd journal集成
+
+### memory-monitor-service.sh
+
+内存监控服务管理脚本。用于安装、配置和管理内存监控服务，支持系统服务和定时任务。
+
+#### 功能特性
+
+- ✅ 一键安装/卸载系统服务
+- ✅ systemd服务管理
+- ✅ 定时任务配置
+- ✅ 服务参数配置
+- ✅ 日志查看和管理
+- ✅ 自动启动和重启
+
+#### 使用方法
+
+```bash
+# 安装服务
+sudo ./memory-monitor-service.sh install
+
+# 启动服务
+sudo ./memory-monitor-service.sh start
+
+# 查看状态
+sudo ./memory-monitor-service.sh status
+
+# 安装定时任务
+sudo ./memory-monitor-service.sh cron-install
+
+# 查看日志
+sudo ./memory-monitor-service.sh logs
+
+# 配置参数
+sudo ./memory-monitor-service.sh configure
+```
+
 ### n98-magerun2.sh
 
 n98-magerun2 的 Composer 安装和管理脚本。n98-magerun2 是一个强大的 Magento 2 命令行工具，提供了许多有用的命令来管理 Magento 2 项目。
