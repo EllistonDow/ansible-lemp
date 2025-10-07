@@ -2,7 +2,7 @@
 # Docker & Docker Compose 安装脚本
 # 适用于 Ubuntu 24.04 LTS
 # 作者: Ansible LEMP Project
-# 版本: 1.0.0
+# 版本: 2.2.2
 
 set -e
 
@@ -164,13 +164,66 @@ start_docker_service() {
     log_success "Docker 服务已启动并设置开机自启"
 }
 
+# 检查用户权限
+check_user_permissions() {
+    log_info "检查用户权限..."
+    
+    # 检查当前用户是否已经在 docker 组中
+    if groups $USER | grep -q '\bdocker\b'; then
+        log_warning "用户 $USER 已经在 docker 组中"
+        return 0
+    fi
+    
+    # 检查 docker 组是否存在
+    if ! getent group docker > /dev/null 2>&1; then
+        log_error "docker 组不存在，请先安装 Docker"
+        return 1
+    fi
+    
+    return 1
+}
+
 # 配置用户组
 configure_user_group() {
     log_info "配置用户组..."
     
+    # 检查当前用户权限
+    if check_user_permissions; then
+        log_success "用户 $USER 权限已正确配置"
+        return 0
+    fi
+    
+    # 添加用户到 docker 组
     sudo usermod -aG docker $USER
     
     log_success "用户 $USER 已添加到 docker 组"
+    
+    # 提示用户重新登录或使用 newgrp
+    log_warning "权限更改需要重新登录才能生效"
+    log_info "或者运行: ${CYAN}newgrp docker${NC} 来立即应用新权限"
+}
+
+# 测试无 sudo 权限的 Docker 访问
+test_docker_permissions() {
+    log_info "测试 Docker 权限..."
+    
+    # 检查是否可以直接使用 docker 命令（无需 sudo）
+    if docker --version > /dev/null 2>&1; then
+        log_success "✅ Docker 权限测试通过 - 无需 sudo"
+        
+        # 测试运行容器
+        if docker run --rm hello-world > /dev/null 2>&1; then
+            log_success "✅ Docker 容器运行测试通过 - 无需 sudo"
+            return 0
+        else
+            log_warning "⚠️ Docker 命令可用但无法运行容器，可能需要重新登录"
+            return 1
+        fi
+    else
+        log_warning "⚠️ Docker 权限测试失败 - 仍需要 sudo"
+        log_info "请运行: ${CYAN}newgrp docker${NC} 或重新登录"
+        return 1
+    fi
 }
 
 # 验证安装
@@ -178,14 +231,14 @@ verify_installation() {
     log_info "验证安装..."
     
     # 检查 Docker 版本
-    local docker_version=$(docker --version)
+    local docker_version=$(sudo docker --version)
     log_success "Docker 版本: $docker_version"
     
     # 检查 Docker Compose 版本
-    local compose_version=$(docker compose version)
+    local compose_version=$(sudo docker compose version)
     log_success "Docker Compose 版本: $compose_version"
     
-    # 测试 Docker 运行
+    # 测试 Docker 运行（使用 sudo）
     log_info "测试 Docker 运行..."
     if sudo docker run --rm hello-world > /dev/null 2>&1; then
         log_success "Docker 运行测试通过"
@@ -197,6 +250,9 @@ verify_installation() {
     # 显示 Docker 信息
     log_info "Docker 系统信息:"
     sudo docker system info --format "{{.ServerVersion}}" | head -1
+    
+    # 测试无 sudo 权限的 Docker 访问
+    test_docker_permissions
 }
 
 # 显示安装后说明
@@ -209,12 +265,22 @@ show_post_install_info() {
     echo -e "  ${INFO_MARK} 请重新登录或运行: ${CYAN}newgrp docker${NC}"
     echo -e "  ${INFO_MARK} 然后就可以使用: ${CYAN}docker${NC} 和 ${CYAN}docker compose${NC} 命令"
     echo
+    echo -e "${YELLOW}🔐 权限说明:${NC}"
+    echo -e "  ${CHECK_MARK} 如果看到 '权限测试通过 - 无需 sudo'，说明权限已正确配置"
+    echo -e "  ${WARNING_MARK} 如果仍需要 sudo，请运行: ${CYAN}newgrp docker${NC}"
+    echo -e "  ${INFO_MARK} 或者重新登录系统以应用新的组权限"
+    echo
     echo -e "${YELLOW}🚀 常用命令:${NC}"
     echo -e "  ${CYAN}docker --version${NC}           # 查看 Docker 版本"
     echo -e "  ${CYAN}docker compose version${NC}      # 查看 Docker Compose 版本"
     echo -e "  ${CYAN}docker run hello-world${NC}      # 运行测试容器"
     echo -e "  ${CYAN}docker system info${NC}         # 查看 Docker 系统信息"
     echo -e "  ${CYAN}docker system prune${NC}        # 清理未使用的资源"
+    echo
+    echo -e "${YELLOW}🔧 权限故障排除:${NC}"
+    echo -e "  ${CYAN}groups \$${NC}                  # 查看当前用户所属组"
+    echo -e "  ${CYAN}newgrp docker${NC}              # 立即应用 docker 组权限"
+    echo -e "  ${CYAN}sudo usermod -aG docker \$${NC} # 重新添加用户到 docker 组"
     echo
     echo -e "${YELLOW}📚 学习资源:${NC}"
     echo -e "  ${CYAN}https://docs.docker.com/${NC}   # Docker 官方文档"
@@ -229,7 +295,9 @@ show_help() {
     echo -e "${YELLOW}功能:${NC}"
     echo -e "  • 自动安装 Docker Engine"
     echo -e "  • 自动安装 Docker Compose Plugin"
-    echo -e "  • 配置用户组权限"
+    echo -e "  • 智能配置用户组权限"
+    echo -e "  • 权限检查和自动修复"
+    echo -e "  • 无 sudo 权限测试"
     echo -e "  • 设置开机自启"
     echo -e "  • 验证安装结果"
     echo
@@ -240,6 +308,7 @@ show_help() {
     echo -e "${YELLOW}使用方法:${NC}"
     echo -e "  ${CYAN}./install-docker.sh${NC}           # 使用官方仓库安装"
     echo -e "  ${CYAN}./install-docker.sh --quick${NC}  # 使用一键脚本安装"
+    echo -e "  ${CYAN}./install-docker.sh --fix-perms${NC} # 修复 Docker 权限问题"
     echo -e "  ${CYAN}./install-docker.sh --help${NC}   # 显示帮助信息"
     echo
     echo -e "${YELLOW}系统要求:${NC}"
@@ -248,6 +317,39 @@ show_help() {
     echo -e "  • 至少 2GB 内存"
     echo -e "  • 至少 10GB 可用磁盘空间"
     echo
+}
+
+# 修复 Docker 权限问题
+fix_docker_permissions() {
+    log_info "修复 Docker 权限问题..."
+    
+    # 检查 Docker 是否已安装
+    if ! command -v docker &> /dev/null; then
+        log_error "Docker 未安装，请先运行安装脚本"
+        exit 1
+    fi
+    
+    # 检查 docker 组是否存在
+    if ! getent group docker > /dev/null 2>&1; then
+        log_error "docker 组不存在，请重新安装 Docker"
+        exit 1
+    fi
+    
+    # 配置用户组权限
+    configure_user_group
+    
+    # 测试权限
+    echo
+    log_info "测试修复后的权限..."
+    if test_docker_permissions; then
+        log_success "🎉 权限修复成功！现在可以无 sudo 使用 Docker"
+    else
+        log_warning "权限修复完成，但需要重新登录或运行 newgrp docker"
+        echo
+        log_info "请运行以下命令之一:"
+        echo -e "  ${CYAN}newgrp docker${NC}  # 立即应用权限"
+        echo -e "  ${CYAN}logout${NC}         # 重新登录系统"
+    fi
 }
 
 # 一键脚本安装方法
@@ -294,6 +396,10 @@ main() {
             quick_install
             verify_installation
             show_post_install_info
+            ;;
+        "--fix-perms"|"-f")
+            log_info "修复 Docker 权限问题..."
+            fix_docker_permissions
             ;;
         "")
             log_info "使用官方仓库安装方法..."
