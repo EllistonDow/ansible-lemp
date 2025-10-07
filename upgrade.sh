@@ -18,13 +18,13 @@ echo -e "==========================================${NC}"
 echo
 
 # 检查是否在正确的目录
-if [ ! -f "VERSION" ]; then
+if [ ! -d ".git" ]; then
     echo -e "${RED}错误: 请在 ansible-lemp 项目根目录运行此脚本${NC}"
     exit 1
 fi
 
-# 显示当前版本
-CURRENT_VERSION=$(cat VERSION)
+# 显示当前版本（从 Git tags 获取）
+CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
 echo -e "${YELLOW}当前版本: ${CURRENT_VERSION}${NC}"
 echo
 
@@ -77,7 +77,7 @@ else
     exit 1
 fi
 
-NEW_VERSION=$(cat VERSION)
+NEW_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
 echo -e "  ${GREEN}✓${NC} 新版本: ${NEW_VERSION}"
 
 echo

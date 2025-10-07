@@ -78,7 +78,7 @@ git checkout v1.9.7
 cd /home/doge/ansible-lemp
 
 # 查看版本号
-cat VERSION
+git describe --tags --abbrev=0
 
 # 查看新增的文件
 ls -la dogetools/
@@ -169,8 +169,8 @@ cd /home/doge/ansible-lemp
 cd /home/doge/ansible-lemp
 
 # 检查版本
-cat VERSION
-# 应该显示: 1.9.7
+git describe --tags --abbrev=0
+# 应该显示: v1.9.7
 
 # 查看 Git 状态
 git status
@@ -279,7 +279,7 @@ crontab ~/crontab.backup.YYYYMMDD_HHMMSS
 ## ✅ 升级完成检查清单
 
 - [ ] 代码已更新到 v1.9.7
-- [ ] VERSION 文件显示 1.9.7
+- [ ] Git tag 显示 v1.9.7
 - [ ] 所有新脚本文件存在且可执行
 - [ ] 日志目录已创建（/home/doge/Dropbox/logs）
 - [ ] Crontab 已更新
