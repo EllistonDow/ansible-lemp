@@ -617,6 +617,10 @@ EOF
     echo -e "  ${INFO_MARK} 关键配置: max_input_vars=4000, date.timezone=America/Los_Angeles"
     echo -e "  ${INFO_MARK} 性能优化: realpath_cache_size=10M, zlib.output_compression=Off"
     
+    # 验证PHP-FPM配置
+    echo -e "  ${INFO_MARK} 验证PHP-FPM配置..."
+    validate_php_fpm_config
+    
     # 验证关键配置
     echo -e "  ${INFO_MARK} 验证PHP-FPM配置..."
     validate_config "php-fpm" "$PHP_FPM_CONFIG" "${PHP_MAX_CHILDREN}" "pm.max_children"
@@ -782,6 +786,10 @@ EOF
     
     echo -e "  ${CHECK_MARK} Nginx配置已优化 (支持Magento2缓存、高并发和ModSecurity WAF防护)"
     echo -e "  ${INFO_MARK} ModSecurity已设置为级别1 (适合Magento2生产环境)"
+    
+    # 验证Nginx配置
+    echo -e "  ${INFO_MARK} 验证Nginx配置..."
+    validate_nginx_config
 }
 
 optimize_valkey() {
@@ -816,6 +824,10 @@ EOF
 
     echo -e "  ${CHECK_MARK} Valkey配置已优化 (适用于Magento2会话存储)"
     echo -e "  ${INFO_MARK} 最大内存: ${VALKEY_MEMORY_GB}GB"
+    
+    # 验证Valkey配置
+    echo -e "  ${INFO_MARK} 验证Valkey配置..."
+    validate_valkey_config
     
     # 验证关键配置
     echo -e "  ${INFO_MARK} 验证Valkey配置..."
@@ -876,12 +888,6 @@ indices.fielddata.cache.size: 20%
 action.auto_create_index: true
 action.destructive_requires_name: false
 
-# Multi-Site Index Isolation Settings
-index.mapping.total_fields.limit: 1000
-index.number_of_shards: 1
-index.number_of_replicas: 0
-index.refresh_interval: 30s
-
 # Site-specific index templates (will be created via API)
 # Pattern: site{N}_catalog_product, site{N}_catalog_category, etc.
 # Each site gets isolated indices with resource quotas
@@ -895,12 +901,6 @@ cluster.routing.allocation.disk.watermark.flood_stage: 95%
 
 # Security Settings (如果不需要可以禁用)
 plugins.security.disabled: true
-
-# Performance Settings
-cluster.routing.allocation.disk.threshold_enabled: true
-cluster.routing.allocation.disk.watermark.low: 85%
-cluster.routing.allocation.disk.watermark.high: 90%
-cluster.routing.allocation.disk.watermark.flood_stage: 95%
 EOF
 
     # 优化JVM设置 (动态分配内存给OpenSearch)
@@ -972,6 +972,10 @@ EOF
     echo -e "  ${CHECK_MARK} OpenSearch配置已优化 (适用于Magento2产品搜索)"
     echo -e "  ${INFO_MARK} JVM堆内存: ${OPENSEARCH_MEMORY_GB}GB"
     
+    # 验证OpenSearch配置
+    echo -e "  ${INFO_MARK} 验证OpenSearch配置..."
+    validate_opensearch_config
+    
     # 验证关键配置
     echo -e "  ${INFO_MARK} 验证OpenSearch配置..."
     validate_config "opensearch" "$OPENSEARCH_JVM_CONFIG" "${OPENSEARCH_MEMORY_GB}g" "-Xmx"
@@ -1006,6 +1010,127 @@ force_reoptimize() {
     optimize_all
 }
 
+# Valkey配置验证函数
+validate_valkey_config() {
+    echo -e "  ${INFO_MARK} 检查Valkey配置文件..."
+    
+    # 检查是否有重复的maxmemory配置
+    local maxmemory_count=$(sudo grep -c "^maxmemory " "$VALKEY_CONFIG")
+    if [[ $maxmemory_count -gt 1 ]]; then
+        echo -e "  ${CROSS_MARK} 发现重复的maxmemory配置"
+        return 1
+    fi
+    
+    # 检查是否有重复的maxmemory-policy配置
+    local maxmemory_policy_count=$(sudo grep -c "^maxmemory-policy " "$VALKEY_CONFIG")
+    if [[ $maxmemory_policy_count -gt 1 ]]; then
+        echo -e "  ${CROSS_MARK} 发现重复的maxmemory-policy配置"
+        return 1
+    fi
+    
+    # 检查关键配置是否存在
+    local maxmemory_exists=$(sudo grep "^maxmemory " "$VALKEY_CONFIG" | wc -l)
+    if [[ $maxmemory_exists -eq 0 ]]; then
+        echo -e "  ${CROSS_MARK} 缺少maxmemory配置"
+        return 1
+    fi
+    
+    echo -e "  ${CHECK_MARK} Valkey配置检查通过"
+    return 0
+}
+
+# PHP-FPM配置验证函数
+validate_php_fpm_config() {
+    echo -e "  ${INFO_MARK} 检查PHP-FPM配置文件..."
+    
+    # 检查PHP-FPM配置语法
+    if sudo php-fpm8.3 -t >/dev/null 2>&1; then
+        echo -e "  ${CHECK_MARK} PHP-FPM配置文件语法正确"
+    else
+        echo -e "  ${CROSS_MARK} PHP-FPM配置文件语法错误"
+        echo -e "  ${INFO_MARK} 请检查: sudo php-fpm8.3 -t"
+        return 1
+    fi
+    
+    # 检查是否有重复的pm配置
+    local pm_max_children_count=$(sudo grep -c "^pm.max_children" "$PHP_FPM_CONFIG")
+    if [[ $pm_max_children_count -gt 1 ]]; then
+        echo -e "  ${CROSS_MARK} 发现重复的pm.max_children配置"
+        return 1
+    fi
+    
+    # 检查关键配置是否存在
+    local pm_mode=$(sudo grep "^pm = " "$PHP_FPM_CONFIG" | wc -l)
+    if [[ $pm_mode -eq 0 ]]; then
+        echo -e "  ${CROSS_MARK} 缺少pm模式配置"
+        return 1
+    fi
+    
+    echo -e "  ${CHECK_MARK} PHP-FPM配置检查通过"
+    return 0
+}
+
+# Nginx配置验证函数
+validate_nginx_config() {
+    echo -e "  ${INFO_MARK} 检查Nginx配置文件语法..."
+    
+    # 检查Nginx配置语法
+    if sudo nginx -t >/dev/null 2>&1; then
+        echo -e "  ${CHECK_MARK} Nginx配置文件语法正确"
+    else
+        echo -e "  ${CROSS_MARK} Nginx配置文件语法错误"
+        echo -e "  ${INFO_MARK} 请检查: sudo nginx -t"
+        return 1
+    fi
+    
+    # 检查关键配置是否存在
+    local worker_processes=$(sudo grep "worker_processes" "$NGINX_CONFIG" | grep -v "^#" | wc -l)
+    local worker_connections=$(sudo grep "worker_connections" "$NGINX_CONFIG" | grep -v "^#" | wc -l)
+    
+    if [[ $worker_processes -eq 0 ]]; then
+        echo -e "  ${CROSS_MARK} 缺少worker_processes配置"
+        return 1
+    fi
+    
+    if [[ $worker_connections -eq 0 ]]; then
+        echo -e "  ${CROSS_MARK} 缺少worker_connections配置"
+        return 1
+    fi
+    
+    echo -e "  ${CHECK_MARK} Nginx关键配置检查通过"
+    return 0
+}
+
+# OpenSearch配置验证函数
+validate_opensearch_config() {
+    echo -e "  ${INFO_MARK} 检查OpenSearch配置文件语法..."
+    
+    # 检查配置文件语法
+    if sudo /opt/opensearch/bin/opensearch --version >/dev/null 2>&1; then
+        echo -e "  ${CHECK_MARK} OpenSearch可执行文件正常"
+    else
+        echo -e "  ${CROSS_MARK} OpenSearch可执行文件异常"
+        return 1
+    fi
+    
+    # 检查配置文件是否有重复字段
+    local duplicate_fields=$(sudo grep -o "cluster.routing.allocation.disk.threshold_enabled" "$OPENSEARCH_CONFIG" | wc -l)
+    if [[ $duplicate_fields -gt 1 ]]; then
+        echo -e "  ${CROSS_MARK} 发现重复配置字段: cluster.routing.allocation.disk.threshold_enabled"
+        return 1
+    fi
+    
+    # 检查是否有索引级别设置
+    local index_settings=$(sudo grep -c "^index\." "$OPENSEARCH_CONFIG" 2>/dev/null | head -1 || echo "0")
+    if [[ "$index_settings" -gt 0 ]]; then
+        echo -e "  ${CROSS_MARK} 发现索引级别设置，这些应该在索引模板中配置"
+        return 1
+    fi
+    
+    echo -e "  ${CHECK_MARK} OpenSearch配置文件语法正确"
+    return 0
+}
+
 # 配置验证函数 - 验证配置是否正确应用
 validate_config() {
     local service="$1"
@@ -1022,7 +1147,7 @@ validate_config() {
             actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
             ;;
         "valkey")
-            actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | sed "s/.*${config_key} *//" || echo "未设置")
+            actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | head -1 | sed "s/^${config_key} *//" || echo "未设置")
             ;;
         "opensearch")
             actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | sed "s/.*${config_key}//" || echo "未设置")
@@ -1050,7 +1175,22 @@ restart_services() {
     sudo systemctl restart valkey && echo -e "  ${CHECK_MARK} Valkey已重启"
     sudo systemctl restart opensearch && echo -e "  ${CHECK_MARK} OpenSearch已重启"
     
-    # 清理Swap空间 (服务重启后释放Swap)
+    # 验证OpenSearch服务启动
+    echo -e "  ${INFO_MARK} 验证OpenSearch服务启动..."
+    sleep 10  # 等待服务启动
+    if systemctl is-active --quiet opensearch; then
+        echo -e "  ${CHECK_MARK} OpenSearch服务启动成功"
+        
+        # 测试OpenSearch连接
+        if curl -s http://localhost:9200/_cluster/health >/dev/null 2>&1; then
+            echo -e "  ${CHECK_MARK} OpenSearch API连接正常"
+        else
+            echo -e "  ${WARNING_MARK} OpenSearch API连接异常，请检查日志"
+        fi
+    else
+        echo -e "  ${CROSS_MARK} OpenSearch服务启动失败"
+        echo -e "  ${INFO_MARK} 请检查日志: sudo journalctl -u opensearch -n 20"
+    fi
     echo -e "  ${INFO_MARK} 清理Swap空间..."
     local swap_before=$(free | grep Swap | awk '{print $3}')
     if [[ $swap_before -gt 0 ]]; then
