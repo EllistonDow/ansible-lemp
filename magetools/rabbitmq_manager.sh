@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# RabbitMQ 消费者管理脚本
-# 用于管理 Magento 站点的 RabbitMQ 队列消费者
+# RabbitMQ 站点管理脚本
+# 用于配置和管理 Magento 站点的 RabbitMQ 虚拟主机、用户和队列消费者
 # 作者: Ansible LEMP Project
-# 版本: 1.0.0
+# 版本: 2.0.0
 
 set -e
 
@@ -12,8 +12,17 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
+
+# 符号定义
+CHECK_MARK="✅"
+CROSS_MARK="❌"
+WARNING_MARK="⚠️"
+INFO_MARK="ℹ️"
+ROCKET="🚀"
+GEAR="⚙️"
 
 # 日志函数
 log_info() {
@@ -34,9 +43,10 @@ log_error() {
 
 # 显示帮助信息
 show_help() {
-    echo -e "${CYAN}RabbitMQ 消费者管理脚本${NC}"
+    echo -e "${CYAN}RabbitMQ 站点管理脚本${NC}"
     echo
     echo -e "${YELLOW}功能:${NC}"
+    echo -e "  • 配置 Magento 站点的 RabbitMQ 虚拟主机和用户"
     echo -e "  • 启动/停止/重启队列消费者"
     echo -e "  • 查看消费者状态和日志"
     echo -e "  • 监控内存使用情况"
@@ -46,18 +56,24 @@ show_help() {
     echo -e "  ${CYAN}./rabbitmq_manager.sh <site_name> <action>${NC}"
     echo
     echo -e "${YELLOW}操作:${NC}"
-    echo -e "  ${CYAN}start${NC}     - 启动消费者"
-    echo -e "  ${CYAN}stop${NC}      - 停止消费者"
-    echo -e "  ${CYAN}restart${NC}   - 重启消费者"
-    echo -e "  ${CYAN}status${NC}    - 查看状态"
-    echo -e "  ${CYAN}logs${NC}      - 查看日志"
-    echo -e "  ${CYAN}monitor${NC}   - 监控内存"
-    echo -e "  ${CYAN}clean${NC}     - 清理队列"
+    echo -e "  ${CYAN}setup${NC}     - 配置站点 (创建虚拟主机、用户、配置 Magento)"
+    echo -e "  ${CYAN}start${NC}      - 启动消费者"
+    echo -e "  ${CYAN}stop${NC}       - 停止消费者"
+    echo -e "  ${CYAN}restart${NC}    - 重启消费者"
+    echo -e "  ${CYAN}status${NC}     - 查看状态"
+    echo -e "  ${CYAN}logs${NC}       - 查看日志"
+    echo -e "  ${CYAN}monitor${NC}    - 监控内存"
+    echo -e "  ${CYAN}clean${NC}      - 清理队列"
+    echo -e "  ${CYAN}remove${NC}     - 删除站点配置"
     echo
     echo -e "${YELLOW}示例:${NC}"
-    echo -e "  ${CYAN}./rabbitmq_manager.sh ipwa start${NC}"
-    echo -e "  ${CYAN}./rabbitmq_manager.sh hawk status${NC}"
-    echo -e "  ${CYAN}./rabbitmq_manager.sh ipwa logs${NC}"
+    echo -e "  ${CYAN}./rabbitmq_manager.sh ipwa setup${NC}    # 配置 ipwa 站点"
+    echo -e "  ${CYAN}./rabbitmq_manager.sh hawk start${NC}    # 启动 hawk 消费者"
+    echo -e "  ${CYAN}./rabbitmq_manager.sh ipwa status${NC}   # 查看 ipwa 状态"
+    echo -e "  ${CYAN}./rabbitmq_manager.sh hawk logs${NC}     # 查看 hawk 日志"
+    echo
+    echo -e "${YELLOW}站点路径格式:${NC}"
+    echo -e "  ${CYAN}/home/doge/<site_name>${NC}"
     echo
 }
 
@@ -78,6 +94,8 @@ SITE_NAME="$1"
 ACTION="$2"
 SITE_PATH="/home/doge/$SITE_NAME"
 VHOST_NAME="/$SITE_NAME"
+USER_NAME="${SITE_NAME}_user"
+PASSWORD="${SITE_NAME^}#2025!"
 PID_FILE="/tmp/rabbitmq_consumers_${SITE_NAME}.pid"
 LOG_DIR="/home/doge/logs/rabbitmq"
 
@@ -87,17 +105,118 @@ if [ ! -d "$SITE_PATH" ]; then
     exit 1
 fi
 
-# 启动消费者
-start_consumers() {
-    log_info "启动 $SITE_NAME 的队列消费者..."
-    
-    # 检查是否已经在运行
-    if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-        log_warning "消费者已经在运行 (PID: $(cat "$PID_FILE"))"
-        return 0
+# 验证 Magento 安装
+if [ ! -f "$SITE_PATH/bin/magento" ]; then
+    log_error "Magento 安装文件不存在: $SITE_PATH/bin/magento"
+    exit 1
+fi
+
+# 检查 RabbitMQ 服务状态
+check_rabbitmq_service() {
+    if ! systemctl is-active --quiet rabbitmq-server; then
+        log_error "RabbitMQ 服务未运行，请先启动 RabbitMQ"
+        log_info "启动命令: sudo systemctl start rabbitmq-server"
+        exit 1
     fi
-    
-    # 创建消费者脚本
+}
+
+# 配置站点
+setup_site() {
+    log_info "开始配置 RabbitMQ 站点: $SITE_NAME"
+    log_info "站点路径: $SITE_PATH"
+    log_info "虚拟主机: $VHOST_NAME"
+    log_info "用户: $USER_NAME"
+    echo
+
+    check_rabbitmq_service
+
+    # 1. 创建虚拟主机
+    log_info "创建 RabbitMQ 虚拟主机..."
+    if sudo rabbitmqctl list_vhosts | grep -q "^$VHOST_NAME$"; then
+        log_warning "虚拟主机 $VHOST_NAME 已存在"
+    else
+        sudo rabbitmqctl add_vhost "$VHOST_NAME"
+        log_success "虚拟主机 $VHOST_NAME 创建成功"
+    fi
+
+    # 2. 创建用户
+    log_info "创建 RabbitMQ 用户..."
+    if sudo rabbitmqctl list_users | grep -q "^$USER_NAME"; then
+        log_warning "用户 $USER_NAME 已存在，更新密码..."
+        sudo rabbitmqctl change_password "$USER_NAME" "$PASSWORD"
+    else
+        sudo rabbitmqctl add_user "$USER_NAME" "$PASSWORD"
+        log_success "用户 $USER_NAME 创建成功"
+    fi
+
+    # 3. 设置权限
+    log_info "设置用户权限..."
+    sudo rabbitmqctl set_permissions -p "$VHOST_NAME" "$USER_NAME" ".*" ".*" ".*"
+    log_success "用户权限设置完成"
+
+    # 4. 停止现有消费者
+    log_info "停止现有队列消费者..."
+    pkill -f "queue:consumers:start.*$SITE_NAME" || true
+    sleep 2
+
+    # 5. 配置 Magento AMQP
+    log_info "配置 Magento AMQP 连接..."
+    cd "$SITE_PATH"
+
+    php -d detect_unicode=0 bin/magento setup:config:set \
+        --amqp-host="127.0.0.1" \
+        --amqp-port=5672 \
+        --amqp-user="$USER_NAME" \
+        --amqp-password="$PASSWORD" \
+        --amqp-virtualhost="$VHOST_NAME"
+
+    log_success "AMQP 配置完成"
+
+    # 6. 清理缓存
+    log_info "清理 Magento 缓存..."
+    php -d detect_unicode=0 bin/magento cache:flush
+    log_success "缓存清理完成"
+
+    # 7. 编译依赖注入
+    log_info "编译依赖注入..."
+    php -d memory_limit=2G -d detect_unicode=0 bin/magento setup:di:compile
+    log_success "依赖注入编译完成"
+
+    # 8. 启动队列消费者
+    log_info "启动优化的队列消费者..."
+    start_consumers_internal
+
+    # 9. 等待消费者启动
+    log_info "等待消费者启动..."
+    sleep 5
+
+    # 10. 显示队列状态
+    log_info "显示队列状态..."
+    sudo rabbitmqctl list_queues -p "$VHOST_NAME" name consumers messages_ready messages_unacknowledged
+
+    # 11. 显示配置摘要
+    echo
+    log_success "🎉 RabbitMQ 配置完成！"
+    echo
+    echo -e "${YELLOW}📋 配置摘要:${NC}"
+    echo -e "  站点名称: ${CYAN}$SITE_NAME${NC}"
+    echo -e "  站点路径: ${CYAN}$SITE_PATH${NC}"
+    echo -e "  虚拟主机: ${CYAN}$VHOST_NAME${NC}"
+    echo -e "  用户名: ${CYAN}$USER_NAME${NC}"
+    echo -e "  密码: ${CYAN}$PASSWORD${NC}"
+    echo -e "  消费者 PID: ${CYAN}$(cat "$PID_FILE" 2>/dev/null || echo 'N/A')${NC}"
+    echo
+    echo -e "${YELLOW}🔧 管理命令:${NC}"
+    echo -e "  查看队列状态: ${CYAN}sudo rabbitmqctl list_queues -p $VHOST_NAME${NC}"
+    echo -e "  停止消费者: ${CYAN}./rabbitmq_manager.sh $SITE_NAME stop${NC}"
+    echo -e "  查看日志: ${CYAN}./rabbitmq_manager.sh $SITE_NAME logs${NC}"
+    echo -e "  监控内存: ${CYAN}./rabbitmq_manager.sh $SITE_NAME monitor${NC}"
+    echo
+}
+
+# 启动消费者（内部函数）
+start_consumers_internal() {
+    # 创建消费者管理脚本
     CONSUMER_SCRIPT="/tmp/rabbitmq_consumers_${SITE_NAME}.sh"
     cat > "$CONSUMER_SCRIPT" << EOF
 #!/bin/bash
@@ -170,12 +289,27 @@ EOF
 
     chmod +x "$CONSUMER_SCRIPT"
     
-    # 启动消费者
+    # 启动消费者管理脚本
     nohup "$CONSUMER_SCRIPT" >/dev/null 2>&1 &
     CONSUMER_PID=$!
     echo "$CONSUMER_PID" > "$PID_FILE"
     
-    log_success "消费者启动成功 (PID: $CONSUMER_PID)"
+    log_success "队列消费者启动完成 (PID: $CONSUMER_PID)"
+}
+
+# 启动消费者
+start_consumers() {
+    log_info "启动 $SITE_NAME 的队列消费者..."
+    
+    check_rabbitmq_service
+    
+    # 检查是否已经在运行
+    if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+        log_warning "消费者已经在运行 (PID: $(cat "$PID_FILE"))"
+        return 0
+    fi
+    
+    start_consumers_internal
 }
 
 # 停止消费者
@@ -236,6 +370,13 @@ show_status() {
     echo
     echo -e "${CYAN}=== 相关进程 ===${NC}"
     ps aux | grep "queue:consumers:start.*$SITE_NAME" | grep -v grep || echo "无相关进程"
+    
+    echo
+    echo -e "${CYAN}=== 配置信息 ===${NC}"
+    echo -e "虚拟主机: ${CYAN}$VHOST_NAME${NC}"
+    echo -e "用户名: ${CYAN}$USER_NAME${NC}"
+    echo -e "密码: ${CYAN}$PASSWORD${NC}"
+    echo -e "站点路径: ${CYAN}$SITE_PATH${NC}"
 }
 
 # 查看日志
@@ -316,8 +457,51 @@ clean_queues() {
     fi
 }
 
+# 删除站点配置
+remove_site() {
+    log_info "删除 $SITE_NAME 的 RabbitMQ 配置..."
+    
+    echo -e "${YELLOW}警告: 这将删除虚拟主机、用户和所有相关配置！${NC}"
+    read -p "确认继续? (y/N): " -n 1 -r
+    echo
+    
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        # 停止消费者
+        stop_consumers
+        
+        # 删除虚拟主机
+        if sudo rabbitmqctl list_vhosts | grep -q "^$VHOST_NAME$"; then
+            sudo rabbitmqctl delete_vhost "$VHOST_NAME"
+            log_success "虚拟主机 $VHOST_NAME 已删除"
+        fi
+        
+        # 删除用户
+        if sudo rabbitmqctl list_users | grep -q "^$USER_NAME"; then
+            sudo rabbitmqctl delete_user "$USER_NAME"
+            log_success "用户 $USER_NAME 已删除"
+        fi
+        
+        # 清理文件
+        rm -f "$PID_FILE"
+        rm -f "/tmp/rabbitmq_consumers_${SITE_NAME}.sh"
+        
+        # 清理日志
+        if [ -d "$LOG_DIR" ]; then
+            rm -f "$LOG_DIR"/${SITE_NAME}_*.log
+            log_success "日志文件已清理"
+        fi
+        
+        log_success "站点配置已完全删除"
+    else
+        log_info "操作已取消"
+    fi
+}
+
 # 执行操作
 case "$ACTION" in
+    "setup")
+        setup_site
+        ;;
     "start")
         start_consumers
         ;;
@@ -338,6 +522,9 @@ case "$ACTION" in
         ;;
     "clean")
         clean_queues
+        ;;
+    "remove")
+        remove_site
         ;;
     *)
         log_error "未知操作: $ACTION"

@@ -26,7 +26,7 @@ This Ansible project provides a fully automated installation and configuration o
 | RabbitMQ | 4.1.4 | ✅ |
 | Valkey | 8 | ✅ |
 | Varnish | 7.6 | ✅ |
-| Nginx | 1.27.4 + ModSecurity | ✅ |
+| Nginx | 1.29.1 + ModSecurity | ✅ |
 | Fail2ban | Latest | - |
 | Webmin | Latest | - |
 | phpMyAdmin | Latest | - |
