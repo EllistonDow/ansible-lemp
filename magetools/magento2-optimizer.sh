@@ -1303,38 +1303,6 @@ validate_rabbitmq_config() {
     echo -e "  ${CHECK_MARK} RabbitMQ配置文件语法正确"
     return 0
 }
-    echo -e "${WARNING_MARK} ${YELLOW}强制重新优化 - 清理混合配置...${NC}"
-    echo -e "  ${INFO_MARK} 这将清理所有旧的优化配置，确保配置一致性"
-    echo
-    
-    # 清理所有配置文件中的旧优化配置
-    echo -e "  ${GEAR} 清理PHP-FPM混合配置..."
-    clean_config "$PHP_FPM_CONFIG" "php-fpm"
-    
-    echo -e "  ${GEAR} 清理Valkey混合配置..."
-    clean_config "$VALKEY_CONFIG" "valkey"
-    
-    echo -e "  ${GEAR} 清理MySQL配置（完全重写）..."
-    # MySQL配置完全重写，不需要特殊清理
-    
-    echo -e "  ${GEAR} 清理Nginx配置（完全重写）..."
-    # Nginx配置完全重写，不需要特殊清理
-    
-    echo -e "  ${GEAR} 清理OpenSearch配置（完全重写）..."
-    # OpenSearch配置完全重写，不需要特殊清理
-    
-    echo -e "  ${CHECK_MARK} 配置清理完成，开始重新优化..."
-    echo
-    
-    # 重新运行优化
-    optimize_mysql
-    optimize_php_fpm
-    optimize_nginx
-    optimize_valkey
-    optimize_rabbitmq
-    optimize_opensearch
-
-
 
 # 强制重新优化 - 清理所有混合配置
 force_reoptimize() {
