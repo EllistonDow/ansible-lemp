@@ -535,7 +535,7 @@ setup_site() {
         log_info "配置 Magento AMQP 连接（带超时保护）..."
         
         # 使用 timeout 命令防止卡住（减少超时时间）
-        if timeout 30 php -d detect_unicode=0 bin/magento setup:config:set \
+        if timeout 30 php bin/magento setup:config:set \
             --amqp-host="127.0.0.1" \
             --amqp-port=5672 \
             --amqp-user="$USER_NAME" \
@@ -558,7 +558,7 @@ setup_site() {
 
     # 7. 清理缓存
     log_info "清理 Magento 缓存..."
-    if php -d detect_unicode=0 bin/magento cache:flush; then
+    if php bin/magento cache:flush; then
         log_success "缓存清理完成"
     else
         log_warning "缓存清理失败，继续执行"
@@ -566,7 +566,7 @@ setup_site() {
 
     # 8. 编译依赖注入
     log_info "编译依赖注入..."
-    if php -d memory_limit=2G -d detect_unicode=0 bin/magento setup:di:compile; then
+    if php -d memory_limit=2G bin/magento setup:di:compile; then
         log_success "依赖注入编译完成"
     else
         log_warning "依赖注入编译失败，继续执行"
@@ -624,17 +624,17 @@ start_consumers_simple() {
     
     # 启动第一个消费者（测试模式）
     log_info "启动测试消费者..."
-    php -d detect_unicode=0 bin/magento queue:consumers:start async.operations.all --max-messages=1 --single-thread &
+    php bin/magento queue:consumers:start async.operations.all --max-messages=1 --single-thread &
     local test_pid=$!
     sleep 2
     kill $test_pid 2>/dev/null || true
     
     # 启动主要消费者（后台运行）
     log_info "启动主要消费者..."
-    nohup php -d detect_unicode=0 bin/magento queue:consumers:start async.operations.all --single-thread >/dev/null 2>&1 &
+    nohup php bin/magento queue:consumers:start async.operations.all --single-thread >/dev/null 2>&1 &
     local pid1=$!
     
-    nohup php -d detect_unicode=0 bin/magento queue:consumers:start product_action_attribute.update --single-thread >/dev/null 2>&1 &
+    nohup php bin/magento queue:consumers:start product_action_attribute.update --single-thread >/dev/null 2>&1 &
     local pid2=$!
     
     # 保存 PID
@@ -709,7 +709,7 @@ start_consumer() {
         echo "\$(date): 启动消费者 \$consumer_name (内存限制: \$php_memory_limit)" >> "\$LOG_DIR/\${SITE_NAME}_\${consumer_name}.log"
         
         cd "\$SITE_PATH"
-        php -d memory_limit=\$php_memory_limit -d detect_unicode=0 bin/magento queue:consumers:start "\$consumer_name" --max-messages=\$max_messages --single-thread &
+        php -d memory_limit=\$php_memory_limit bin/magento queue:consumers:start "\$consumer_name" --max-messages=\$max_messages --single-thread &
         local pid=\$!
         
         # 监控内存使用

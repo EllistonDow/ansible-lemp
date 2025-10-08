@@ -275,7 +275,7 @@ Type=simple
 User=$(whoami)
 Group=www-data
 WorkingDirectory=${SITE_PATH}
-ExecStart=/usr/bin/php -d memory_limit=2G -d detect_unicode=0 bin/magento queue:consumers:start ${consumer_name} --max-messages=1000
+ExecStart=/usr/bin/php -d memory_limit=2G bin/magento queue:consumers:start ${consumer_name} --max-messages=1000
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -646,7 +646,7 @@ setup_site() {
         log_info "配置 Magento AMQP 连接（带超时保护）..."
         
         # 使用 timeout 命令防止卡住
-        if timeout 30 php -d detect_unicode=0 bin/magento setup:config:set \
+        if timeout 30 php bin/magento setup:config:set \
             --amqp-host="127.0.0.1" \
             --amqp-port=5672 \
             --amqp-user="$USER_NAME" \
@@ -669,7 +669,7 @@ setup_site() {
 
     # 7. 清理缓存
     log_info "清理 Magento 缓存..."
-    if php -d detect_unicode=0 bin/magento cache:flush; then
+    if php bin/magento cache:flush; then
         log_success "缓存清理完成"
     else
         log_warning "缓存清理失败，继续执行"
@@ -677,7 +677,7 @@ setup_site() {
 
     # 8. 编译依赖注入
     log_info "编译依赖注入..."
-    if php -d memory_limit=2G -d detect_unicode=0 bin/magento setup:di:compile; then
+    if php -d memory_limit=2G bin/magento setup:di:compile; then
         log_success "依赖注入编译完成"
     else
         log_warning "依赖注入编译失败，继续执行"
