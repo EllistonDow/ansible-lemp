@@ -234,11 +234,22 @@ mkdir -p "\$LOG_DIR"
 monitor_memory() {
     local pid=\$1
     local consumer_name=\$2
-    local max_memory=512000  # 512MB
+    
+    # 根据系统总内存动态调整监控阈值
+    local total_memory_gb=\$(free -g | grep Mem | awk '{print \$2}')
+    local max_memory_kb
+    
+    if [ "\$total_memory_gb" -ge 128 ]; then
+        max_memory_kb=4194304  # 4GB for 128GB+ servers
+    elif [ "\$total_memory_gb" -ge 64 ]; then
+        max_memory_kb=2097152  # 2GB for 64GB+ servers
+    else
+        max_memory_kb=1048576  # 1GB for smaller servers
+    fi
     
     while kill -0 \$pid 2>/dev/null; do
         local memory=\$(ps -o rss= -p \$pid 2>/dev/null | tr -d ' ')
-        if [ -n "\$memory" ] && [ \$memory -gt \$max_memory ]; then
+        if [ -n "\$memory" ] && [ \$memory -gt \$max_memory_kb ]; then
             echo "\$(date): \$consumer_name 内存使用过高 (\${memory}KB)，重启消费者" >> "\$LOG_DIR/\${SITE_NAME}_memory.log"
             kill \$pid
             return 1
