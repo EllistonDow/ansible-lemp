@@ -212,6 +212,13 @@ setup_site() {
     echo -e "  查看日志: ${CYAN}./rabbitmq_manager.sh $SITE_NAME logs${NC}"
     echo -e "  监控内存: ${CYAN}./rabbitmq_manager.sh $SITE_NAME monitor${NC}"
     echo
+    echo -e "${YELLOW}📊 消费者配置:${NC}"
+    local cpu_cores=$(nproc)
+    local consumer_multiplier=$((cpu_cores * 2))
+    echo -e "  CPU核心数: ${CYAN}$cpu_cores${NC}"
+    echo -e "  消费者倍数: ${CYAN}$consumer_multiplier${NC}"
+    echo -e "  启动的消费者类型: ${CYAN}6种${NC} (async.operations.all, product_action_attribute.update, exportProcessor, inventoryQtyUpdate, sales.rule.update, media.storage.catalog.image.resize)"
+    echo -e "  动态内存限制: ${CYAN}根据服务器内存自动调整${NC}"
 }
 
 # 启动消费者（内部函数）
@@ -240,11 +247,11 @@ monitor_memory() {
     local max_memory_kb
     
     if [ "\$total_memory_gb" -ge 128 ]; then
-        max_memory_kb=4194304  # 4GB for 128GB+ servers
+        max_memory_kb=6291456  # 6GB for 128GB+ servers
     elif [ "\$total_memory_gb" -ge 64 ]; then
-        max_memory_kb=2097152  # 2GB for 64GB+ servers
+        max_memory_kb=3145728  # 3GB for 64GB+ servers
     else
-        max_memory_kb=1048576  # 1GB for smaller servers
+        max_memory_kb=1572864  # 1.5GB for smaller servers
     fi
     
     while kill -0 \$pid 2>/dev/null; do
@@ -264,11 +271,23 @@ start_consumer() {
     local consumer_name=\$1
     local max_messages=\${2:-1000}
     
+    # 根据服务器内存动态调整 PHP 内存限制
+    local total_memory_gb=\$(free -g | grep Mem | awk '{print \$2}')
+    local php_memory_limit
+    
+    if [ "\$total_memory_gb" -ge 128 ]; then
+        php_memory_limit="2G"
+    elif [ "\$total_memory_gb" -ge 64 ]; then
+        php_memory_limit="1.5G"
+    else
+        php_memory_limit="1G"
+    fi
+    
     while true; do
-        echo "\$(date): 启动消费者 \$consumer_name" >> "\$LOG_DIR/\${SITE_NAME}_\${consumer_name}.log"
+        echo "\$(date): 启动消费者 \$consumer_name (内存限制: \$php_memory_limit)" >> "\$LOG_DIR/\${SITE_NAME}_\${consumer_name}.log"
         
         cd "\$SITE_PATH"
-        php -d memory_limit=1G -d detect_unicode=0 bin/magento queue:consumers:start "\$consumer_name" --max-messages=\$max_messages --single-thread &
+        php -d memory_limit=\$php_memory_limit -d detect_unicode=0 bin/magento queue:consumers:start "\$consumer_name" --max-messages=\$max_messages --single-thread &
         local pid=\$!
         
         # 监控内存使用
@@ -280,19 +299,27 @@ start_consumer() {
         
         echo "\$(date): 消费者 \$consumer_name 退出，退出码: \$exit_code" >> "\$LOG_DIR/\${SITE_NAME}_\${consumer_name}.log"
         
-        # 如果正常退出，等待5秒后重启
-        if [ \$exit_code -eq 0 ]; then
-            sleep 5
-        else
-            # 异常退出，等待30秒后重启
-            sleep 30
-        fi
+        # 智能错误处理 - 根据退出码调整等待时间
+        case \$exit_code in
+            0) sleep 5 ;;  # 正常退出，短暂等待
+            1) sleep 30 ;; # 一般错误，中等等待
+            2) sleep 60 ;; # 严重错误，较长等待
+            *) sleep 120 ;; # 未知错误，最长等待
+        esac
     done
 }
 
 # 启动主要消费者
-start_consumer "async.operations.all" 1000 &
-start_consumer "product_action_attribute.update" 500 &
+# 根据 CPU 核心数动态调整消费者数量和消息处理量
+local cpu_cores=\$(nproc)
+local consumer_multiplier=\$((cpu_cores * 2))  # 每核心2个消费者
+
+start_consumer "async.operations.all" \$((consumer_multiplier * 100)) &
+start_consumer "product_action_attribute.update" \$((consumer_multiplier * 50)) &
+start_consumer "exportProcessor" \$((consumer_multiplier * 30)) &
+start_consumer "inventoryQtyUpdate" \$((consumer_multiplier * 20)) &
+start_consumer "sales.rule.update" \$((consumer_multiplier * 15)) &
+start_consumer "media.storage.catalog.image.resize" \$((consumer_multiplier * 10)) &
 
 # 等待所有后台进程
 wait

@@ -31,6 +31,8 @@ PHP_FPM_INI_CONFIG="/etc/php/8.3/fpm/php.ini"
 PHP_CLI_INI_CONFIG="/etc/php/8.3/cli/php.ini"
 NGINX_CONFIG="/etc/nginx/nginx.conf"
 VALKEY_CONFIG="/etc/valkey/valkey.conf"
+RABBITMQ_CONFIG="/etc/rabbitmq/rabbitmq.conf"
+RABBITMQ_ENV_CONFIG="/etc/rabbitmq/rabbitmq-env.conf"
 OPENSEARCH_CONFIG="/etc/opensearch/opensearch.yml"
 OPENSEARCH_JVM_CONFIG="/etc/opensearch/jvm.options"
 BACKUP_DIR="/opt/lemp-backups/magento2-optimizer"
@@ -49,13 +51,15 @@ calculate_memory_allocation() {
     local mysql_percent=25      # MySQL InnoDB Buffer Pool
     local opensearch_percent=12 # OpenSearch JVM Heap
     local valkey_percent=9      # Valkey Cache
-    local system_percent=31     # 系统缓存和内核
-    local other_percent=23      # 其他服务 (Nginx, Varnish等)
+    local rabbitmq_percent=8    # RabbitMQ 内存
+    local system_percent=27     # 系统缓存和内核
+    local other_percent=19      # 其他服务 (Nginx, Varnish等)
     
     # 计算各服务内存 (GB)
     MYSQL_MEMORY_GB=$((total_gb * mysql_percent / 100))
     OPENSEARCH_MEMORY_GB=$((total_gb * opensearch_percent / 100))
     VALKEY_MEMORY_GB=$((total_gb * valkey_percent / 100))
+    RABBITMQ_MEMORY_GB=$((total_gb * rabbitmq_percent / 100))
     SYSTEM_MEMORY_GB=$((total_gb * system_percent / 100))
     OTHER_MEMORY_GB=$((total_gb * other_percent / 100))
     
@@ -86,6 +90,7 @@ calculate_memory_allocation() {
     [[ $MYSQL_MEMORY_GB -lt 8 ]] && MYSQL_MEMORY_GB=8
     [[ $OPENSEARCH_MEMORY_GB -lt 4 ]] && OPENSEARCH_MEMORY_GB=4
     [[ $VALKEY_MEMORY_GB -lt 2 ]] && VALKEY_MEMORY_GB=2
+    [[ $RABBITMQ_MEMORY_GB -lt 1 ]] && RABBITMQ_MEMORY_GB=1
     [[ $PHP_MAX_CHILDREN -lt 20 ]] && PHP_MAX_CHILDREN=20
     [[ $PHP_MAX_CHILDREN -gt 150 ]] && PHP_MAX_CHILDREN=150  # 降低最大进程数限制
     
@@ -98,6 +103,191 @@ calculate_memory_allocation() {
     MYSQL_MAX_CONNECTIONS=$((CPU_CORES * 50 + 100))
     MYSQL_THREAD_CACHE=$((CPU_CORES * 5))
     NGINX_WORKER_CONNECTIONS=$((CPU_CORES * 1000 + 1000))
+}
+
+# 配置验证函数 - 验证配置是否正确应用
+validate_config() {
+    local service="$1"
+    local config_file="$2"
+    local expected_value="$3"
+    local config_key="$4"
+    
+    local actual_value
+    case "$service" in
+        "mysql")
+            actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
+            ;;
+        "php-fpm")
+            actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
+            ;;
+        "valkey")
+            actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | head -1 | sed "s/^${config_key} *//" || echo "未设置")
+            ;;
+        "opensearch")
+            actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | sed "s/.*${config_key}//" || echo "未设置")
+            ;;
+    esac
+    
+    if [[ "$actual_value" == "$expected_value" ]]; then
+        echo -e "  ${CHECK_MARK} ${config_key}: ${actual_value}"
+        return 0
+    else
+        echo -e "  ${CROSS_MARK} ${config_key}: ${actual_value} (期望: ${expected_value})"
+        return 1
+    fi
+}
+
+# PHP-FPM配置验证函数
+validate_php_fpm_config() {
+    echo -e "  ${INFO_MARK} 检查PHP-FPM配置文件..."
+    
+    # 检查PHP-FPM配置语法
+    if sudo php-fpm8.3 -t >/dev/null 2>&1; then
+        echo -e "  ${CHECK_MARK} PHP-FPM配置文件语法正确"
+    else
+        echo -e "  ${CROSS_MARK} PHP-FPM配置文件语法错误"
+        echo -e "  ${INFO_MARK} 请检查: sudo php-fpm8.3 -t"
+        return 1
+    fi
+    
+    # 检查是否有重复的pm配置
+    local pm_max_children_count=$(sudo grep -c "^pm.max_children" "$PHP_FPM_CONFIG")
+    if [[ $pm_max_children_count -gt 1 ]]; then
+        echo -e "  ${CROSS_MARK} 发现重复的pm.max_children配置"
+        return 1
+    fi
+    
+    # 检查关键配置是否存在
+    local pm_mode=$(sudo grep "^pm = " "$PHP_FPM_CONFIG" | wc -l)
+    if [[ $pm_mode -eq 0 ]]; then
+        echo -e "  ${CROSS_MARK} 缺少pm模式配置"
+        return 1
+    fi
+    
+    echo -e "  ${CHECK_MARK} PHP-FPM配置检查通过"
+    return 0
+}
+
+# Nginx配置验证函数
+validate_nginx_config() {
+    echo -e "  ${INFO_MARK} 检查Nginx配置文件语法..."
+    
+    # 检查Nginx配置语法
+    if sudo nginx -t >/dev/null 2>&1; then
+        echo -e "  ${CHECK_MARK} Nginx配置文件语法正确"
+    else
+        echo -e "  ${CROSS_MARK} Nginx配置文件语法错误"
+        echo -e "  ${INFO_MARK} 请检查: sudo nginx -t"
+        return 1
+    fi
+    
+    # 检查关键配置是否存在
+    local worker_processes=$(sudo grep "worker_processes" "$NGINX_CONFIG" | grep -v "^#" | wc -l)
+    local worker_connections=$(sudo grep "worker_connections" "$NGINX_CONFIG" | grep -v "^#" | wc -l)
+    
+    if [[ $worker_processes -eq 0 ]]; then
+        echo -e "  ${CROSS_MARK} 缺少worker_processes配置"
+        return 1
+    fi
+    
+    if [[ $worker_connections -eq 0 ]]; then
+        echo -e "  ${CROSS_MARK} 缺少worker_connections配置"
+        return 1
+    fi
+    
+    echo -e "  ${CHECK_MARK} Nginx关键配置检查通过"
+    return 0
+}
+
+# Valkey配置验证函数
+validate_valkey_config() {
+    echo -e "  ${INFO_MARK} 检查Valkey配置文件..."
+    
+    # 检查是否有重复的maxmemory配置
+    local maxmemory_count=$(sudo grep -c "^maxmemory " "$VALKEY_CONFIG")
+    if [[ $maxmemory_count -gt 1 ]]; then
+        echo -e "  ${CROSS_MARK} 发现重复的maxmemory配置"
+        return 1
+    fi
+    
+    # 检查是否有重复的maxmemory-policy配置
+    local maxmemory_policy_count=$(sudo grep -c "^maxmemory-policy " "$VALKEY_CONFIG")
+    if [[ $maxmemory_policy_count -gt 1 ]]; then
+        echo -e "  ${CROSS_MARK} 发现重复的maxmemory-policy配置"
+        return 1
+    fi
+    
+    # 检查关键配置是否存在
+    local maxmemory_exists=$(sudo grep "^maxmemory " "$VALKEY_CONFIG" | wc -l)
+    if [[ $maxmemory_exists -eq 0 ]]; then
+        echo -e "  ${CROSS_MARK} 缺少maxmemory配置"
+        return 1
+    fi
+    
+    echo -e "  ${CHECK_MARK} Valkey配置检查通过"
+    return 0
+}
+
+# OpenSearch配置验证函数
+validate_opensearch_config() {
+    echo -e "  ${INFO_MARK} 检查OpenSearch配置文件语法..."
+    
+    # 检查配置文件语法
+    if sudo /opt/opensearch/bin/opensearch --version >/dev/null 2>&1; then
+        echo -e "  ${CHECK_MARK} OpenSearch可执行文件正常"
+    else
+        echo -e "  ${CROSS_MARK} OpenSearch可执行文件异常"
+        return 1
+    fi
+    
+    # 检查配置文件是否有重复字段
+    local duplicate_fields=$(sudo grep -o "cluster.routing.allocation.disk.threshold_enabled" "$OPENSEARCH_CONFIG" | wc -l)
+    if [[ $duplicate_fields -gt 1 ]]; then
+        echo -e "  ${CROSS_MARK} 发现重复配置字段: cluster.routing.allocation.disk.threshold_enabled"
+        return 1
+    fi
+    
+    # 检查是否有索引级别设置
+    local index_settings=$(sudo grep -c "^index\." "$OPENSEARCH_CONFIG" 2>/dev/null | head -1 || echo "0")
+    if [[ "$index_settings" -gt 0 ]]; then
+        echo -e "  ${CROSS_MARK} 发现索引级别设置，这些应该在索引模板中配置"
+        return 1
+    fi
+    
+    echo -e "  ${CHECK_MARK} OpenSearch配置文件语法正确"
+    return 0
+}
+
+# RabbitMQ配置验证函数
+validate_rabbitmq_config() {
+    echo -e "  ${INFO_MARK} 检查RabbitMQ配置文件..."
+    
+    # 检查配置文件是否存在
+    if [[ ! -f "$RABBITMQ_CONFIG" ]]; then
+        echo -e "  ${CROSS_MARK} RabbitMQ配置文件不存在: $RABBITMQ_CONFIG"
+        return 1
+    fi
+    
+    # 检查关键配置是否存在
+    local memory_watermark=$(sudo grep "vm_memory_high_watermark.relative" "$RABBITMQ_CONFIG" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
+    local disk_limit=$(sudo grep "disk_free_limit.absolute" "$RABBITMQ_CONFIG" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
+    
+    if [[ "$memory_watermark" == "0.6" ]]; then
+        echo -e "  ${CHECK_MARK} 内存水位线配置正确: $memory_watermark"
+    else
+        echo -e "  ${CROSS_MARK} 内存水位线配置异常: $memory_watermark"
+        return 1
+    fi
+    
+    if [[ "$disk_limit" == "2GB" ]]; then
+        echo -e "  ${CHECK_MARK} 磁盘限制配置正确: $disk_limit"
+    else
+        echo -e "  ${CROSS_MARK} 磁盘限制配置异常: $disk_limit"
+        return 1
+    fi
+    
+    echo -e "  ${CHECK_MARK} RabbitMQ配置文件语法正确"
+    return 0
 }
 
 # 系统监控和告警函数
@@ -156,7 +346,7 @@ monitor_system_resources() {
 monitor_services_status() {
     echo -e "${MONITOR_MARK} ${CYAN}服务状态监控...${NC}"
     
-    local services=("mysql" "php8.3-fpm" "nginx" "valkey" "opensearch")
+    local services=("mysql" "php8.3-fpm" "nginx" "valkey" "rabbitmq-server" "opensearch")
     
     for service in "${services[@]}"; do
         if systemctl is-active --quiet "$service"; then
@@ -242,6 +432,7 @@ print_header() {
     echo -e "  MySQL InnoDB Buffer Pool: ${MYSQL_MEMORY_GB}GB (${MYSQL_INSTANCES}个实例)"
     echo -e "  OpenSearch JVM Heap: ${OPENSEARCH_MEMORY_GB}GB"
     echo -e "  Valkey Cache: ${VALKEY_MEMORY_GB}GB"
+    echo -e "  RabbitMQ 内存: ${RABBITMQ_MEMORY_GB}GB"
     echo -e "  PHP-FPM 最大进程数: ${PHP_MAX_CHILDREN}"
     echo -e "  系统缓存预留: ${SYSTEM_MEMORY_GB}GB"
     echo -e "  其他服务预留: ${OTHER_MEMORY_GB}GB"
@@ -275,6 +466,7 @@ print_help() {
     echo -e "  ${GREEN}optimize php${NC}     - 仅优化PHP-FPM配置"
     echo -e "  ${GREEN}optimize nginx${NC}   - 仅优化Nginx配置"
     echo -e "  ${GREEN}optimize valkey${NC}  - 仅优化Valkey配置"
+    echo -e "  ${GREEN}optimize rabbitmq${NC} - 仅优化RabbitMQ配置"
     echo -e "  ${GREEN}optimize opensearch${NC} - 仅优化OpenSearch配置"
     echo
     echo -e "${YELLOW}单独还原选项:${NC}"
@@ -282,14 +474,16 @@ print_help() {
     echo -e "  ${GREEN}restore php${NC}      - 仅还原PHP-FPM配置"
     echo -e "  ${GREEN}restore nginx${NC}    - 仅还原Nginx配置"
     echo -e "  ${GREEN}restore valkey${NC}   - 仅还原Valkey配置"
+    echo -e "  ${GREEN}restore rabbitmq${NC}  - 仅还原RabbitMQ配置"
     echo -e "  ${GREEN}restore opensearch${NC} - 仅还原OpenSearch配置"
     echo
     echo -e "${YELLOW}内存分配策略 (自适应优化):${NC}"
     echo -e "  • MySQL: 25% 总内存 (InnoDB Buffer Pool)"
     echo -e "  • OpenSearch: 12% 总内存 (JVM Heap, 最大32GB)"
     echo -e "  • Valkey: 9% 总内存 (Cache)"
-    echo -e "  • 系统缓存: 31% 总内存 (内核和文件系统)"
-    echo -e "  • 其他服务: 23% 总内存 (Nginx, Varnish等)"
+    echo -e "  • RabbitMQ: 8% 总内存 (队列处理)"
+    echo -e "  • 系统缓存: 27% 总内存 (内核和文件系统)"
+    echo -e "  • 其他服务: 19% 总内存 (Nginx, Varnish等)"
     echo -e "  • PHP-FPM: 基于CPU核心数动态调整 (每核心8个进程)"
     echo -e "  • MySQL连接: 基于CPU核心数动态调整 (每核心50个连接)"
     echo -e "  • Nginx连接: 基于CPU核心数动态调整 (每核心1000个连接)"
@@ -316,10 +510,10 @@ print_help() {
     echo -e "  $0 128 force-reoptimize # 强制重新优化128GB配置（清理混合配置）"
     echo
     echo -e "${YELLOW}内存配置对比:${NC}"
-    echo -e "  ${CYAN}64GB:${NC}  MySQL:16GB, OpenSearch:7GB, Valkey:5GB, PHP进程:120"
-    echo -e "  ${CYAN}128GB:${NC} MySQL:32GB, OpenSearch:15GB, Valkey:11GB, PHP进程:200"
-    echo -e "  ${CYAN}256GB:${NC} MySQL:64GB, OpenSearch:30GB, Valkey:23GB, PHP进程:200"
-    echo -e "  ${CYAN}320GB+:${NC} MySQL增加, OpenSearch限制32GB, 多余内存分配给MySQL"
+    echo -e "  ${CYAN}64GB:${NC}  MySQL:16GB, OpenSearch:7GB, Valkey:5GB, RabbitMQ:5GB, PHP进程:120"
+    echo -e "  ${CYAN}128GB:${NC} MySQL:32GB, OpenSearch:15GB, Valkey:11GB, RabbitMQ:10GB, PHP进程:200"
+    echo -e "  ${CYAN}256GB:${NC} MySQL:64GB, OpenSearch:30GB, Valkey:23GB, RabbitMQ:20GB, PHP进程:200"
+    echo -e "  ${CYAN}320GB+:${NC} MySQL增加, OpenSearch限制32GB, RabbitMQ增加, 多余内存分配给MySQL"
     echo
 }
 
@@ -981,6 +1175,167 @@ EOF
     validate_config "opensearch" "$OPENSEARCH_JVM_CONFIG" "${OPENSEARCH_MEMORY_GB}g" "-Xmx"
 }
 
+optimize_rabbitmq() {
+    echo -e "${GEAR} ${CYAN}优化RabbitMQ配置...${NC}"
+    
+    # 计算内存分配
+    calculate_memory_allocation $TOTAL_RAM_GB
+    
+    create_backup "$RABBITMQ_CONFIG" "rabbitmq.conf"
+    create_backup "$RABBITMQ_ENV_CONFIG" "rabbitmq-env.conf"
+    
+    # 创建优化的RabbitMQ配置
+    sudo tee "$RABBITMQ_CONFIG" > /dev/null << EOF
+# RabbitMQ Configuration for Magento2 Multi-Site
+# Optimized for ${TOTAL_RAM_GB}GB RAM server with ${SITES_COUNT} Magento2 sites
+
+# Memory Settings (使用${RABBITMQ_MEMORY_GB}GB给RabbitMQ)
+vm_memory_high_watermark.relative = 0.6
+vm_memory_high_watermark_paging_ratio = 0.5
+
+# Disk Settings
+disk_free_limit.absolute = 2GB
+disk_free_limit.relative = 2.0
+
+# Connection Settings
+num_acceptors.tcp = 10
+handshake_timeout = 10000
+heartbeat = 60
+tcp_listen_options.backlog = 128
+tcp_listen_options.nodelay = true
+tcp_listen_options.keepalive = true
+
+# Channel and Queue Settings
+channel_max = 2048
+frame_max = 131072
+queue_master_locator = min-masters
+
+# Logging Settings
+log.console = true
+log.console.level = info
+log.file = /var/log/rabbitmq/rabbitmq.log
+log.file.level = info
+log.file.rotation.date = $D0
+log.file.rotation.size = 10485760
+
+# Management Plugin (可选，用于监控)
+management.tcp.port = 15672
+management.tcp.ip = 127.0.0.1
+
+# Performance Settings
+collect_statistics_interval = 5000
+tcp_listen_options.sndbuf = 196608
+tcp_listen_options.recbuf = 196608
+
+# Security Settings
+default_user_tags.administrator = true
+EOF
+
+    # 创建RabbitMQ环境配置
+    sudo tee "$RABBITMQ_ENV_CONFIG" > /dev/null << EOF
+# RabbitMQ Environment Configuration for Magento2
+# Optimized for ${TOTAL_RAM_GB}GB RAM server
+
+# Memory Settings
+RABBITMQ_VM_MEMORY_HIGH_WATERMARK=0.6
+
+# Node Settings
+RABBITMQ_NODE_IP_ADDRESS=127.0.0.1
+RABBITMQ_NODE_PORT=5672
+
+# Log Settings
+RABBITMQ_LOG_BASE=/var/log/rabbitmq
+RABBITMQ_MNESIA_BASE=/var/lib/rabbitmq/mnesia
+
+# Performance Settings
+RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS="+S 2:2"
+EOF
+
+    # 创建日志目录
+    sudo mkdir -p /var/log/rabbitmq
+    sudo chown -R rabbitmq:rabbitmq /var/log/rabbitmq
+    
+    # 设置systemd限制
+    sudo mkdir -p /etc/systemd/system/rabbitmq-server.service.d/
+    sudo tee /etc/systemd/system/rabbitmq-server.service.d/override.conf > /dev/null << 'EOF'
+[Service]
+LimitNOFILE=65535
+LimitNPROC=32768
+EOF
+
+    echo -e "  ${CHECK_MARK} RabbitMQ配置已优化 (适用于Magento2队列处理)"
+    echo -e "  ${INFO_MARK} 内存限制: ${RABBITMQ_MEMORY_GB}GB"
+    echo -e "  ${INFO_MARK} 磁盘限制: 2GB"
+    
+    # 验证RabbitMQ配置
+    echo -e "  ${INFO_MARK} 验证RabbitMQ配置..."
+    validate_rabbitmq_config
+}
+
+# RabbitMQ配置验证函数
+validate_rabbitmq_config() {
+    echo -e "  ${INFO_MARK} 检查RabbitMQ配置文件..."
+    
+    # 检查配置文件是否存在
+    if [[ ! -f "$RABBITMQ_CONFIG" ]]; then
+        echo -e "  ${CROSS_MARK} RabbitMQ配置文件不存在: $RABBITMQ_CONFIG"
+        return 1
+    fi
+    
+    # 检查关键配置是否存在
+    local memory_watermark=$(sudo grep "vm_memory_high_watermark.relative" "$RABBITMQ_CONFIG" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
+    local disk_limit=$(sudo grep "disk_free_limit.absolute" "$RABBITMQ_CONFIG" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
+    
+    if [[ "$memory_watermark" == "0.6" ]]; then
+        echo -e "  ${CHECK_MARK} 内存水位线配置正确: $memory_watermark"
+    else
+        echo -e "  ${CROSS_MARK} 内存水位线配置异常: $memory_watermark"
+        return 1
+    fi
+    
+    if [[ "$disk_limit" == "2GB" ]]; then
+        echo -e "  ${CHECK_MARK} 磁盘限制配置正确: $disk_limit"
+    else
+        echo -e "  ${CROSS_MARK} 磁盘限制配置异常: $disk_limit"
+        return 1
+    fi
+    
+    echo -e "  ${CHECK_MARK} RabbitMQ配置文件语法正确"
+    return 0
+}
+    echo -e "${WARNING_MARK} ${YELLOW}强制重新优化 - 清理混合配置...${NC}"
+    echo -e "  ${INFO_MARK} 这将清理所有旧的优化配置，确保配置一致性"
+    echo
+    
+    # 清理所有配置文件中的旧优化配置
+    echo -e "  ${GEAR} 清理PHP-FPM混合配置..."
+    clean_config "$PHP_FPM_CONFIG" "php-fpm"
+    
+    echo -e "  ${GEAR} 清理Valkey混合配置..."
+    clean_config "$VALKEY_CONFIG" "valkey"
+    
+    echo -e "  ${GEAR} 清理MySQL配置（完全重写）..."
+    # MySQL配置完全重写，不需要特殊清理
+    
+    echo -e "  ${GEAR} 清理Nginx配置（完全重写）..."
+    # Nginx配置完全重写，不需要特殊清理
+    
+    echo -e "  ${GEAR} 清理OpenSearch配置（完全重写）..."
+    # OpenSearch配置完全重写，不需要特殊清理
+    
+    echo -e "  ${CHECK_MARK} 配置清理完成，开始重新优化..."
+    echo
+    
+    # 重新运行优化
+    optimize_mysql
+    optimize_php_fpm
+    optimize_nginx
+    optimize_valkey
+    optimize_rabbitmq
+    optimize_opensearch
+
+
+
 # 强制重新优化 - 清理所有混合配置
 force_reoptimize() {
     echo -e "${WARNING_MARK} ${YELLOW}强制重新优化 - 清理混合配置...${NC}"
@@ -1007,160 +1362,12 @@ force_reoptimize() {
     echo
     
     # 重新运行优化
-    optimize_all
-}
-
-# Valkey配置验证函数
-validate_valkey_config() {
-    echo -e "  ${INFO_MARK} 检查Valkey配置文件..."
-    
-    # 检查是否有重复的maxmemory配置
-    local maxmemory_count=$(sudo grep -c "^maxmemory " "$VALKEY_CONFIG")
-    if [[ $maxmemory_count -gt 1 ]]; then
-        echo -e "  ${CROSS_MARK} 发现重复的maxmemory配置"
-        return 1
-    fi
-    
-    # 检查是否有重复的maxmemory-policy配置
-    local maxmemory_policy_count=$(sudo grep -c "^maxmemory-policy " "$VALKEY_CONFIG")
-    if [[ $maxmemory_policy_count -gt 1 ]]; then
-        echo -e "  ${CROSS_MARK} 发现重复的maxmemory-policy配置"
-        return 1
-    fi
-    
-    # 检查关键配置是否存在
-    local maxmemory_exists=$(sudo grep "^maxmemory " "$VALKEY_CONFIG" | wc -l)
-    if [[ $maxmemory_exists -eq 0 ]]; then
-        echo -e "  ${CROSS_MARK} 缺少maxmemory配置"
-        return 1
-    fi
-    
-    echo -e "  ${CHECK_MARK} Valkey配置检查通过"
-    return 0
-}
-
-# PHP-FPM配置验证函数
-validate_php_fpm_config() {
-    echo -e "  ${INFO_MARK} 检查PHP-FPM配置文件..."
-    
-    # 检查PHP-FPM配置语法
-    if sudo php-fpm8.3 -t >/dev/null 2>&1; then
-        echo -e "  ${CHECK_MARK} PHP-FPM配置文件语法正确"
-    else
-        echo -e "  ${CROSS_MARK} PHP-FPM配置文件语法错误"
-        echo -e "  ${INFO_MARK} 请检查: sudo php-fpm8.3 -t"
-        return 1
-    fi
-    
-    # 检查是否有重复的pm配置
-    local pm_max_children_count=$(sudo grep -c "^pm.max_children" "$PHP_FPM_CONFIG")
-    if [[ $pm_max_children_count -gt 1 ]]; then
-        echo -e "  ${CROSS_MARK} 发现重复的pm.max_children配置"
-        return 1
-    fi
-    
-    # 检查关键配置是否存在
-    local pm_mode=$(sudo grep "^pm = " "$PHP_FPM_CONFIG" | wc -l)
-    if [[ $pm_mode -eq 0 ]]; then
-        echo -e "  ${CROSS_MARK} 缺少pm模式配置"
-        return 1
-    fi
-    
-    echo -e "  ${CHECK_MARK} PHP-FPM配置检查通过"
-    return 0
-}
-
-# Nginx配置验证函数
-validate_nginx_config() {
-    echo -e "  ${INFO_MARK} 检查Nginx配置文件语法..."
-    
-    # 检查Nginx配置语法
-    if sudo nginx -t >/dev/null 2>&1; then
-        echo -e "  ${CHECK_MARK} Nginx配置文件语法正确"
-    else
-        echo -e "  ${CROSS_MARK} Nginx配置文件语法错误"
-        echo -e "  ${INFO_MARK} 请检查: sudo nginx -t"
-        return 1
-    fi
-    
-    # 检查关键配置是否存在
-    local worker_processes=$(sudo grep "worker_processes" "$NGINX_CONFIG" | grep -v "^#" | wc -l)
-    local worker_connections=$(sudo grep "worker_connections" "$NGINX_CONFIG" | grep -v "^#" | wc -l)
-    
-    if [[ $worker_processes -eq 0 ]]; then
-        echo -e "  ${CROSS_MARK} 缺少worker_processes配置"
-        return 1
-    fi
-    
-    if [[ $worker_connections -eq 0 ]]; then
-        echo -e "  ${CROSS_MARK} 缺少worker_connections配置"
-        return 1
-    fi
-    
-    echo -e "  ${CHECK_MARK} Nginx关键配置检查通过"
-    return 0
-}
-
-# OpenSearch配置验证函数
-validate_opensearch_config() {
-    echo -e "  ${INFO_MARK} 检查OpenSearch配置文件语法..."
-    
-    # 检查配置文件语法
-    if sudo /opt/opensearch/bin/opensearch --version >/dev/null 2>&1; then
-        echo -e "  ${CHECK_MARK} OpenSearch可执行文件正常"
-    else
-        echo -e "  ${CROSS_MARK} OpenSearch可执行文件异常"
-        return 1
-    fi
-    
-    # 检查配置文件是否有重复字段
-    local duplicate_fields=$(sudo grep -o "cluster.routing.allocation.disk.threshold_enabled" "$OPENSEARCH_CONFIG" | wc -l)
-    if [[ $duplicate_fields -gt 1 ]]; then
-        echo -e "  ${CROSS_MARK} 发现重复配置字段: cluster.routing.allocation.disk.threshold_enabled"
-        return 1
-    fi
-    
-    # 检查是否有索引级别设置
-    local index_settings=$(sudo grep -c "^index\." "$OPENSEARCH_CONFIG" 2>/dev/null | head -1 || echo "0")
-    if [[ "$index_settings" -gt 0 ]]; then
-        echo -e "  ${CROSS_MARK} 发现索引级别设置，这些应该在索引模板中配置"
-        return 1
-    fi
-    
-    echo -e "  ${CHECK_MARK} OpenSearch配置文件语法正确"
-    return 0
-}
-
-# 配置验证函数 - 验证配置是否正确应用
-validate_config() {
-    local service="$1"
-    local config_file="$2"
-    local expected_value="$3"
-    local config_key="$4"
-    
-    local actual_value
-    case "$service" in
-        "mysql")
-            actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
-            ;;
-        "php-fpm")
-            actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | sed 's/.*= *//' || echo "未设置")
-            ;;
-        "valkey")
-            actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | head -1 | sed "s/^${config_key} *//" || echo "未设置")
-            ;;
-        "opensearch")
-            actual_value=$(sudo grep "^${config_key}" "$config_file" 2>/dev/null | sed "s/.*${config_key}//" || echo "未设置")
-            ;;
-    esac
-    
-    if [[ "$actual_value" == "$expected_value" ]]; then
-        echo -e "  ${CHECK_MARK} ${config_key}: ${actual_value}"
-        return 0
-    else
-        echo -e "  ${CROSS_MARK} ${config_key}: ${actual_value} (期望: ${expected_value})"
-        return 1
-    fi
+    optimize_mysql
+    optimize_php_fpm
+    optimize_nginx
+    optimize_valkey
+    optimize_rabbitmq
+    optimize_opensearch
 }
 
 restart_services() {
@@ -1173,6 +1380,7 @@ restart_services() {
     sudo systemctl restart php8.3-fpm && echo -e "  ${CHECK_MARK} PHP-FPM已重启"
     sudo systemctl restart nginx && echo -e "  ${CHECK_MARK} Nginx已重启"
     sudo systemctl restart valkey && echo -e "  ${CHECK_MARK} Valkey已重启"
+    sudo systemctl restart rabbitmq-server && echo -e "  ${CHECK_MARK} RabbitMQ已重启"
     sudo systemctl restart opensearch && echo -e "  ${CHECK_MARK} OpenSearch已重启"
     
     # 验证OpenSearch服务启动
@@ -1440,6 +1648,18 @@ optimize_valkey_only() {
     echo -e "${CHECK_MARK} ${GREEN}Valkey优化完成！${NC}"
 }
 
+# 单独优化RabbitMQ配置
+optimize_rabbitmq_only() {
+    print_header
+    echo -e "${ROCKET} ${GREEN}开始优化RabbitMQ配置...${NC}"
+    echo
+    optimize_rabbitmq
+    echo
+    echo -e "${INFO_MARK} ${YELLOW}重启RabbitMQ服务...${NC}"
+    sudo systemctl daemon-reload
+    sudo systemctl restart rabbitmq-server && echo -e "  ${CHECK_MARK} RabbitMQ已重启"
+    echo
+    echo -e "${CHECK_MARK} ${GREEN}RabbitMQ优化完成！${NC}"
 # 单独优化OpenSearch配置
 optimize_opensearch_only() {
     print_header
@@ -1467,6 +1687,7 @@ optimize_all() {
     optimize_php_fpm
     optimize_nginx
     optimize_valkey
+    optimize_rabbitmq
     optimize_opensearch
     
     echo
@@ -1608,8 +1829,21 @@ restore_valkey() {
     fi
 }
 
-# 单独还原OpenSearch配置
-restore_opensearch() {
+# 单独还原RabbitMQ配置
+restore_rabbitmq() {
+    echo -e "${WARNING_MARK} ${YELLOW}还原RabbitMQ配置...${NC}"
+    local restore_count=0
+    restore_backup "$RABBITMQ_CONFIG" "rabbitmq.conf" && ((restore_count++))
+    restore_backup "$RABBITMQ_ENV_CONFIG" "rabbitmq-env.conf" && ((restore_count++))
+    
+    if [[ $restore_count -gt 0 ]]; then
+        sudo systemctl daemon-reload
+        sudo systemctl restart rabbitmq-server
+        echo -e "${CHECK_MARK} ${GREEN}RabbitMQ配置已还原并重启服务${NC}"
+    else
+        echo -e "${CROSS_MARK} ${RED}RabbitMQ配置还原失败${NC}"
+    fi
+}
     echo -e "${WARNING_MARK} ${YELLOW}还原OpenSearch配置...${NC}"
     local restore_count=0
     restore_backup "$OPENSEARCH_CONFIG" "opensearch.yml" && ((restore_count++))
@@ -1637,6 +1871,8 @@ restore_all() {
     restore_backup "$PHP_CLI_INI_CONFIG" "php-cli.ini" && ((restore_count++))
     restore_backup "$NGINX_CONFIG" "nginx.conf" && ((restore_count++))
     restore_backup "$VALKEY_CONFIG" "valkey.conf" && ((restore_count++))
+    restore_backup "$RABBITMQ_CONFIG" "rabbitmq.conf" && ((restore_count++))
+    restore_backup "$RABBITMQ_ENV_CONFIG" "rabbitmq-env.conf" && ((restore_count++))
     restore_backup "$OPENSEARCH_CONFIG" "opensearch.yml" && ((restore_count++))
     restore_backup "$OPENSEARCH_JVM_CONFIG" "jvm.options" && ((restore_count++))
     
@@ -1684,6 +1920,9 @@ main() {
                 "valkey")
                     optimize_valkey_only
                     ;;
+                "rabbitmq")
+                    optimize_rabbitmq_only
+                    ;;
                 "opensearch")
                     optimize_opensearch_only
                     ;;
@@ -1712,6 +1951,9 @@ main() {
                     ;;
                 "valkey")
                     restore_valkey
+                    ;;
+                "rabbitmq")
+                    restore_rabbitmq
                     ;;
                 "opensearch")
                     restore_opensearch
