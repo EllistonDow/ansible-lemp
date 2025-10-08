@@ -1,4 +1,4 @@
-# Ansible LEMP Stack v1.8.7
+# Ansible LEMP Stack v2.2.3
 
 A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
 
