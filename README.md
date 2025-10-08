@@ -1,4 +1,4 @@
-# Ansible LEMP Stack v2.3.0
+# Ansible LEMP Stack v2.4.0
 
 A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
 
@@ -145,6 +145,49 @@ cd /home/doge/hawk
 - **Batch operations** to reduce system calls
 - **Smart skipping** of already correct permissions
 
+## 🐰 Advanced RabbitMQ Management Suite
+
+Manage Magento2 queue consumers with enterprise-grade tools:
+
+### Enterprise Version (systemd-based)
+```bash
+# Setup with systemd services
+./magetools/rabbitmq_manager_advanced.sh hawk setup
+
+# Start all consumers
+./magetools/rabbitmq_manager_advanced.sh hawk start
+
+# Monitor services
+./magetools/rabbitmq_manager_advanced.sh hawk monitor
+
+# View logs
+./magetools/rabbitmq_manager_advanced.sh hawk logs
+```
+
+### Simple Version (nohup-based)
+```bash
+# Quick setup
+./magetools/rabbitmq_manager_simple.sh hawk setup
+
+# Start consumers
+./magetools/rabbitmq_manager_simple.sh hawk start
+```
+
+### Performance Comparison
+```bash
+# Compare both versions
+./magetools/rabbitmq_performance_comparison.sh
+```
+
+**Advanced Features:**
+- **🏢 Enterprise Management**: systemd service integration
+- **⚡ Dual-Thread Support**: CPUQuota=200% for enhanced performance
+- **🎯 Full Coverage**: All 21 Magento2 queue consumers
+- **🛠️ Ultra-Fast Permissions**: 16 parallel + 2000 batch processing
+- **📈 Auto-Restart**: Restart=always for service reliability
+- **🔒 Resource Limits**: 2GB memory limit per service
+- **📚 Centralized Logging**: systemd journal integration
+
 ## 🌐 Access Points
 
 After installation, access your services at:
@@ -221,6 +264,18 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
   - 🎯 Command: `php bin/magento deploy:mode:show`
   - ✅ Helps identify production/developer/default mode
   - 🔍 Better deployment transparency and debugging
+
+- **v2.4.0** - Advanced RabbitMQ Management Suite (2025-01-07)
+  - 🏢 **Enterprise-Grade Management**: systemd-based consumer management
+  - ⚡ **Dual-Thread Support**: CPUQuota=200% for enhanced performance
+  - 🎯 **Full Consumer Coverage**: All 21 Magento2 queue consumers
+  - 🔧 **Advanced Scripts**: rabbitmq_manager_advanced.sh with systemd integration
+  - 📊 **Simplified Alternative**: rabbitmq_manager_simple.sh for easy deployment
+  - 🚀 **Performance Testing**: rabbitmq_performance_comparison.sh for benchmarking
+  - 🛠️ **Ultra-Fast Permissions**: 16 parallel + 2000 batch processing
+  - 📈 **Auto-Restart**: Restart=always for service reliability
+  - 🔒 **Resource Limits**: 2GB memory limit per service
+  - 📚 **Comprehensive Logging**: systemd journal integration
 
 - **v2.3.0** - Magento2 Performance Optimization Suite (2025-01-07)
   - 🚀 **Major Performance Boost**: 5-10x faster permission setting
