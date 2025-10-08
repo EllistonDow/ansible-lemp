@@ -1,4 +1,4 @@
-# Ansible LEMP Stack v2.4.0
+# Ansible LEMP Stack v2.4.2
 
 A complete automation solution for deploying a production-ready LEMP stack on Ubuntu 24.04.
 
@@ -264,6 +264,21 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
   - 🎯 Command: `php bin/magento deploy:mode:show`
   - ✅ Helps identify production/developer/default mode
   - 🔍 Better deployment transparency and debugging
+
+- **v2.4.2** - 服务重启脚本优化 (2025-01-08)
+  - 🚀 **移除确认交互**: 支持直接执行重启操作，无需用户输入
+  - 🔧 **Valkey 专用**: 完全移除 Redis 检测，只使用 Valkey
+  - 🎨 **彩色输出**: 添加美观的彩色界面和详细状态报告
+  - ⚡ **灵活服务选择**: 支持 all|service1|service2|... 参数格式
+  - 🛠️ **改进错误处理**: 更智能的服务检测和错误报告
+  - 📦 **简化项目**: 删除性能对比脚本，保持项目结构清晰
+  - 🔗 **便捷使用**: 添加软链接 service_restart.sh 便于调用
+
+- **v2.4.1** - PHP 8.3 兼容性修复 (2025-01-08)
+  - 🔧 **移除废弃参数**: 删除 detect_unicode 参数，完全兼容 PHP 8.3
+  - ⚡ **性能优化**: 移除无效参数，减少命令行长度
+  - 🧹 **代码清洁**: 移除废弃代码，提高可维护性
+  - ✅ **无功能影响**: 保持所有功能不变
 
 - **v2.4.0** - Advanced RabbitMQ Management Suite (2025-01-07)
   - 🏢 **Enterprise-Grade Management**: systemd-based consumer management
