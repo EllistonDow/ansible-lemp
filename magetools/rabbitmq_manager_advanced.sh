@@ -1,12 +1,9 @@
 #!/bin/bash
 
-# RabbitMQ 站点管理脚本
-# 用于配置和管理 Magento 站点的 RabbitMQ 虚拟主机、用户和队列消费者
+# RabbitMQ 高级站点管理脚本
+# 使用 systemd 管理、双线程、全量消费者、高性能权限修复
 # 作者: Ansible LEMP Project
-# 版本: 2.1.0
-
-# 移除 set -e，改为手动错误处理
-# set -e
+# 版本: 3.0.0
 
 # 颜色定义
 RED='\033[0;31m'
@@ -24,11 +21,13 @@ WARNING_MARK="⚠️"
 INFO_MARK="ℹ️"
 ROCKET="🚀"
 GEAR="⚙️"
+FIRE="🔥"
 
 # 全局变量
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOCK_FILE="/tmp/rabbitmq_manager_${SITE_NAME}.lock"
-ERROR_LOG="/tmp/rabbitmq_manager_${SITE_NAME}_error.log"
+LOCK_FILE="/tmp/rabbitmq_manager_advanced_${SITE_NAME}.lock"
+ERROR_LOG="/tmp/rabbitmq_manager_advanced_${SITE_NAME}_error.log"
+SYSTEMD_SERVICE_PREFIX="magento-consumer"
 
 # 错误处理函数
 handle_error() {
@@ -111,7 +110,7 @@ generate_password() {
     echo "${site_name^}#2025!"
 }
 
-# 高性能权限修复函数（基于 magento-permissions-fast.sh 优化）
+# 超高性能权限修复函数（基于 magento-permissions-fast.sh 优化）
 fix_permissions_fast() {
     local site_path="$1"
     local nginx_group="${2:-www-data}"
@@ -119,9 +118,9 @@ fix_permissions_fast() {
     
     log_info "修复 Magento 权限（超高性能模式）..."
     
-    # 性能配置（优化参数）
-    local max_parallel_jobs=8   # 优化并行任务数
-    local batch_size=1000       # 优化批处理大小
+    # 性能配置（激进优化参数）
+    local max_parallel_jobs=16  # 增加并行任务数
+    local batch_size=2000       # 增加批处理大小
     
     # 切换到网站目录
     cd "$site_path" || return 1
@@ -183,7 +182,7 @@ check_dependencies() {
 check_permissions() {
     # 检查 sudo 权限
     if ! sudo -n true 2>/dev/null; then
-        log_error "需要 sudo 权限来管理 RabbitMQ"
+        log_error "需要 sudo 权限来管理 RabbitMQ 和 systemd"
         return 1
     fi
     
@@ -257,36 +256,114 @@ safe_rabbitmq_cmd() {
     return 1
 }
 
+# 创建 systemd 服务文件
+create_systemd_service() {
+    local consumer_name="$1"
+    local service_name="${SYSTEMD_SERVICE_PREFIX}-${SITE_NAME}-${consumer_name}"
+    local service_file="/etc/systemd/system/${service_name}.service"
+    
+    log_info "创建 systemd 服务: $service_name"
+    
+    sudo tee "$service_file" > /dev/null << EOF
+[Unit]
+Description=Magento Consumer: ${consumer_name} for ${SITE_NAME}
+After=network.target rabbitmq-server.service
+Wants=rabbitmq-server.service
+
+[Service]
+Type=simple
+User=$(whoami)
+Group=www-data
+WorkingDirectory=${SITE_PATH}
+ExecStart=/usr/bin/php -d memory_limit=2G -d detect_unicode=0 bin/magento queue:consumers:start ${consumer_name} --max-messages=1000
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=${service_name}
+
+# 资源限制
+MemoryLimit=2G
+CPUQuota=200%
+
+# 环境变量
+Environment=PHP_INI_SCAN_DIR=/etc/php/8.1/cli/conf.d
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # 重新加载 systemd
+    sudo systemctl daemon-reload
+    
+    # 启用服务
+    sudo systemctl enable "$service_name"
+    
+    log_success "systemd 服务创建完成: $service_name"
+}
+
+# 启动 systemd 消费者服务
+start_systemd_consumer() {
+    local consumer_name="$1"
+    local service_name="${SYSTEMD_SERVICE_PREFIX}-${SITE_NAME}-${consumer_name}"
+    
+    log_info "启动 systemd 消费者服务: $service_name"
+    
+    if sudo systemctl start "$service_name"; then
+        log_success "消费者服务启动成功: $service_name"
+        return 0
+    else
+        log_error "消费者服务启动失败: $service_name"
+        return 1
+    fi
+}
+
+# 停止 systemd 消费者服务
+stop_systemd_consumer() {
+    local consumer_name="$1"
+    local service_name="${SYSTEMD_SERVICE_PREFIX}-${SITE_NAME}-${consumer_name}"
+    
+    log_info "停止 systemd 消费者服务: $service_name"
+    
+    if sudo systemctl stop "$service_name"; then
+        log_success "消费者服务停止成功: $service_name"
+        return 0
+    else
+        log_warning "消费者服务停止失败或未运行: $service_name"
+        return 1
+    fi
+}
+
 # 显示帮助信息
 show_help() {
-    echo -e "${CYAN}RabbitMQ 站点管理脚本${NC}"
+    echo -e "${CYAN}RabbitMQ 高级站点管理脚本${NC}"
     echo
     echo -e "${YELLOW}功能:${NC}"
-    echo -e "  • 配置 Magento 站点的 RabbitMQ 虚拟主机和用户"
-    echo -e "  • 启动/停止/重启队列消费者"
-    echo -e "  • 查看消费者状态和日志"
-    echo -e "  • 监控内存使用情况"
-    echo -e "  • 清理队列和日志"
+    echo -e "  • 使用 systemd 管理队列消费者"
+    echo -e "  • 双线程消费者支持"
+    echo -e "  • 全量 Magento2 消费者"
+    echo -e "  • 超高性能权限修复"
+    echo -e "  • 自动服务管理和监控"
     echo
     echo -e "${YELLOW}使用方法:${NC}"
-    echo -e "  ${CYAN}./rabbitmq_manager.sh <site_name> <action>${NC}"
+    echo -e "  ${CYAN}./rabbitmq_manager_advanced.sh <site_name> <action>${NC}"
     echo
     echo -e "${YELLOW}操作:${NC}"
-    echo -e "  ${CYAN}setup${NC}     - 配置站点 (创建虚拟主机、用户、配置 Magento)"
-    echo -e "  ${CYAN}start${NC}      - 启动消费者"
-    echo -e "  ${CYAN}stop${NC}       - 停止消费者"
-    echo -e "  ${CYAN}restart${NC}    - 重启消费者"
-    echo -e "  ${CYAN}status${NC}     - 查看状态"
-    echo -e "  ${CYAN}logs${NC}       - 查看日志"
-    echo -e "  ${CYAN}monitor${NC}    - 监控内存"
-    echo -e "  ${CYAN}clean${NC}      - 清理队列"
-    echo -e "  ${CYAN}remove${NC}     - 删除站点配置"
+    echo -e "  ${CYAN}setup${NC}     - 配置站点 (创建虚拟主机、用户、配置 Magento、创建 systemd 服务)"
+    echo -e "  ${CYAN}start${NC}      - 启动所有消费者服务"
+    echo -e "  ${CYAN}stop${NC}       - 停止所有消费者服务"
+    echo -e "  ${CYAN}restart${NC}    - 重启所有消费者服务"
+    echo -e "  ${CYAN}status${NC}     - 查看所有服务状态"
+    echo -e "  ${CYAN}logs${NC}       - 查看服务日志"
+    echo -e "  ${CYAN}monitor${NC}    - 监控服务状态"
+    echo -e "  ${CYAN}clean${NC}      - 清理队列和日志"
+    echo -e "  ${CYAN}remove${NC}     - 删除站点配置和服务"
     echo -e "  ${CYAN}health${NC}     - 健康检查"
     echo
     echo -e "${YELLOW}示例:${NC}"
-    echo -e "  ${CYAN}./rabbitmq_manager.sh ipwa setup${NC}    # 配置 ipwa 站点"
-    echo -e "  ${CYAN}./rabbitmq_manager.sh hawk start${NC}    # 启动 hawk 消费者"
-    echo -e "  ${CYAN}./rabbitmq_manager.sh ipwa health${NC}   # 健康检查"
+    echo -e "  ${CYAN}./rabbitmq_manager_advanced.sh ipwa setup${NC}    # 配置 ipwa 站点"
+    echo -e "  ${CYAN}./rabbitmq_manager_advanced.sh hawk start${NC}    # 启动 hawk 消费者"
+    echo -e "  ${CYAN}./rabbitmq_manager_advanced.sh ipwa health${NC}   # 健康检查"
     echo
     echo -e "${YELLOW}站点路径格式:${NC}"
     echo -e "  ${CYAN}/home/doge/<site_name>${NC}"
@@ -326,11 +403,22 @@ health_check() {
         ((issues++))
     fi
     
-    # 检查消费者进程
-    if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-        echo -e "消费者进程: ${GREEN}运行中${NC}"
-    else
-        echo -e "消费者进程: ${RED}未运行${NC}"
+    # 检查 systemd 服务
+    local active_services=0
+    local total_services=0
+    
+    for consumer in "${CONSUMERS[@]}"; do
+        local service_name="${SYSTEMD_SERVICE_PREFIX}-${SITE_NAME}-${consumer}"
+        ((total_services++))
+        
+        if systemctl is-active --quiet "$service_name"; then
+            ((active_services++))
+        fi
+    done
+    
+    echo -e "消费者服务: ${GREEN}$active_services/$total_services 运行中${NC}"
+    
+    if [ $active_services -lt $total_services ]; then
         ((issues++))
     fi
     
@@ -383,8 +471,31 @@ main() {
     VHOST_NAME="/$SITE_NAME"
     USER_NAME="${SITE_NAME}_user"
     PASSWORD=$(generate_password "$SITE_NAME")
-    PID_FILE="/tmp/rabbitmq_consumers_${SITE_NAME}.pid"
-    LOG_DIR="/home/doge/logs/rabbitmq"
+    
+    # 定义全量消费者列表
+    CONSUMERS=(
+        "async.operations.all"
+        "product_action_attribute.update"
+        "product_action_attribute.website.update"
+        "catalog_website_attribute_value_sync"
+        "media.storage.catalog.image.resize"
+        "exportProcessor"
+        "inventory.source.items.cleanup"
+        "inventory.mass.update"
+        "inventory.reservations.cleanup"
+        "inventory.reservations.update"
+        "inventory.reservations.updateSalabilityStatus"
+        "inventory.indexer.sourceItem"
+        "inventory.indexer.stock"
+        "media.content.synchronization"
+        "media.gallery.renditions.update"
+        "media.gallery.synchronization"
+        "codegeneratorProcessor"
+        "sales.rule.update.coupon.usage"
+        "sales.rule.quote.trigger.recollect"
+        "product_alert"
+        "saveConfigProcessor"
+    )
 
     # 获取锁
     acquire_lock
@@ -440,7 +551,7 @@ main() {
             show_logs
             ;;
         "monitor")
-            monitor_memory
+            monitor_services
             ;;
         "clean")
             clean_queues
@@ -464,7 +575,7 @@ main() {
 
 # 配置站点
 setup_site() {
-    log_info "开始配置 RabbitMQ 站点: $SITE_NAME"
+    log_info "开始配置 RabbitMQ 高级站点: $SITE_NAME"
     log_info "站点路径: $SITE_PATH"
     log_info "虚拟主机: $VHOST_NAME"
     log_info "用户: $USER_NAME"
@@ -534,7 +645,7 @@ setup_site() {
     else
         log_info "配置 Magento AMQP 连接（带超时保护）..."
         
-        # 使用 timeout 命令防止卡住（减少超时时间）
+        # 使用 timeout 命令防止卡住
         if timeout 30 php -d detect_unicode=0 bin/magento setup:config:set \
             --amqp-host="127.0.0.1" \
             --amqp-port=5672 \
@@ -553,7 +664,7 @@ setup_site() {
         fi
     fi
 
-    # 6. 修复权限（防止 Magento 命令失败）
+    # 6. 修复权限（使用超高性能方法）
     fix_permissions_fast "$SITE_PATH"
 
     # 7. 清理缓存
@@ -572,21 +683,27 @@ setup_site() {
         log_warning "依赖注入编译失败，继续执行"
     fi
 
-    # 9. 启动队列消费者（简化版本，更接近原始命令）
-    log_info "启动队列消费者（简化模式）..."
-    start_consumers_simple
+    # 9. 创建 systemd 服务
+    log_info "创建 systemd 消费者服务..."
+    for consumer in "${CONSUMERS[@]}"; do
+        create_systemd_service "$consumer"
+    done
 
-    # 10. 等待消费者启动
-    log_info "等待消费者启动..."
+    # 10. 启动所有消费者服务
+    log_info "启动所有消费者服务..."
+    start_consumers
+
+    # 11. 等待服务启动
+    log_info "等待服务启动..."
     sleep 5
 
-    # 11. 显示队列状态
+    # 12. 显示队列状态
     log_info "显示队列状态..."
     safe_rabbitmq_cmd "list_queues -p '$VHOST_NAME' name consumers messages_ready messages_unacknowledged"
 
-    # 12. 显示配置摘要
+    # 13. 显示配置摘要
     echo
-    log_success "🎉 RabbitMQ 配置完成！"
+    log_success "🎉 RabbitMQ 高级配置完成！"
     echo
     echo -e "${YELLOW}📋 配置摘要:${NC}"
     echo -e "  站点名称: ${CYAN}$SITE_NAME${NC}"
@@ -594,214 +711,69 @@ setup_site() {
     echo -e "  虚拟主机: ${CYAN}$VHOST_NAME${NC}"
     echo -e "  用户名: ${CYAN}$USER_NAME${NC}"
     echo -e "  密码: ${CYAN}$PASSWORD${NC}"
-    echo -e "  消费者 PID: ${CYAN}$(cat "$PID_FILE" 2>/dev/null || echo 'N/A')${NC}"
     echo
     echo -e "${YELLOW}🔧 管理命令:${NC}"
     echo -e "  查看队列状态: ${CYAN}sudo rabbitmqctl list_queues -p $VHOST_NAME${NC}"
-    echo -e "  停止消费者: ${CYAN}./rabbitmq_manager.sh $SITE_NAME stop${NC}"
-    echo -e "  查看日志: ${CYAN}./rabbitmq_manager.sh $SITE_NAME logs${NC}"
-    echo -e "  监控内存: ${CYAN}./rabbitmq_manager.sh $SITE_NAME monitor${NC}"
+    echo -e "  停止消费者: ${CYAN}./rabbitmq_manager_advanced.sh $SITE_NAME stop${NC}"
+    echo -e "  查看日志: ${CYAN}./rabbitmq_manager_advanced.sh $SITE_NAME logs${NC}"
+    echo -e "  监控服务: ${CYAN}./rabbitmq_manager_advanced.sh $SITE_NAME monitor${NC}"
     echo
-    echo -e "${YELLOW}📊 消费者配置:${NC}"
-    local cpu_cores=$(nproc)
-    local consumer_multiplier=$((cpu_cores * 2))
-    echo -e "  CPU核心数: ${CYAN}$cpu_cores${NC}"
-    echo -e "  消费者倍数: ${CYAN}$consumer_multiplier${NC}"
-    echo -e "  启动的消费者类型: ${CYAN}6种${NC} (async.operations.all, product_action_attribute.update, exportProcessor, inventoryQtyUpdate, sales.rule.update, media.storage.catalog.image.resize)"
-    echo -e "  动态内存限制: ${CYAN}根据服务器内存自动调整${NC}"
-}
-
-# 启动消费者（内部函数）
-# 启动消费者函数（简化版本，更接近原始命令）
-start_consumers_simple() {
-    log_info "启动队列消费者（简化模式）..."
-    
-    # 切换到网站目录
-    cd "$SITE_PATH" || {
-        log_error "无法切换到站点目录: $SITE_PATH"
-        return 1
-    }
-    
-    # 启动第一个消费者（测试模式）
-    log_info "启动测试消费者..."
-    php -d detect_unicode=0 bin/magento queue:consumers:start async.operations.all --max-messages=1 --single-thread &
-    local test_pid=$!
-    sleep 2
-    kill $test_pid 2>/dev/null || true
-    
-    # 启动主要消费者（后台运行）
-    log_info "启动主要消费者..."
-    nohup php -d detect_unicode=0 bin/magento queue:consumers:start async.operations.all --single-thread >/dev/null 2>&1 &
-    local pid1=$!
-    
-    nohup php -d detect_unicode=0 bin/magento queue:consumers:start product_action_attribute.update --single-thread >/dev/null 2>&1 &
-    local pid2=$!
-    
-    # 保存 PID
-    echo "$pid1" > "$PID_FILE"
-    echo "$pid2" >> "$PID_FILE"
-    
-    log_success "队列消费者启动完成 (PID: $pid1, $pid2)"
-}
-
-start_consumers_internal() {
-    # 创建消费者管理脚本
-    CONSUMER_SCRIPT="/tmp/rabbitmq_consumers_${SITE_NAME}.sh"
-    cat > "$CONSUMER_SCRIPT" << EOF
-#!/bin/bash
-# RabbitMQ 消费者管理脚本 - $SITE_NAME
-# 自动生成于: $(date)
-
-SITE_PATH="$SITE_PATH"
-SITE_NAME="$SITE_NAME"
-LOG_DIR="$LOG_DIR"
-
-# 创建日志目录
-mkdir -p "\$LOG_DIR"
-
-# 内存监控函数
-monitor_memory() {
-    local pid=\$1
-    local consumer_name=\$2
-    
-    # 根据系统总内存动态调整监控阈值
-    local total_memory_gb=\$(free -g | grep Mem | awk '{print \$2}')
-    local max_memory_kb
-    
-    if [ "\$total_memory_gb" -ge 128 ]; then
-        max_memory_kb=6291456  # 6GB for 128GB+ servers
-    elif [ "\$total_memory_gb" -ge 64 ]; then
-        max_memory_kb=3145728  # 3GB for 64GB+ servers
-    else
-        max_memory_kb=1572864  # 1.5GB for smaller servers
-    fi
-    
-    while kill -0 \$pid 2>/dev/null; do
-        local memory=\$(ps -o rss= -p \$pid 2>/dev/null | tr -d ' ')
-        if [ -n "\$memory" ] && [ \$memory -gt \$max_memory_kb ]; then
-            echo "\$(date): \$consumer_name 内存使用过高 (\${memory}KB)，重启消费者" >> "\$LOG_DIR/\${SITE_NAME}_memory.log"
-            kill \$pid
-            return 1
-        fi
-        sleep 30
-    done
-    return 0
-}
-
-# 启动消费者函数
-start_consumer() {
-    local consumer_name=\$1
-    local max_messages=\${2:-1000}
-    
-    # 根据服务器内存动态调整 PHP 内存限制
-    local total_memory_gb=\$(free -g | grep Mem | awk '{print \$2}')
-    local php_memory_limit
-    
-    if [ "\$total_memory_gb" -ge 128 ]; then
-        php_memory_limit="2G"
-    elif [ "\$total_memory_gb" -ge 64 ]; then
-        php_memory_limit="1.5G"
-    else
-        php_memory_limit="1G"
-    fi
-    
-    while true; do
-        echo "\$(date): 启动消费者 \$consumer_name (内存限制: \$php_memory_limit)" >> "\$LOG_DIR/\${SITE_NAME}_\${consumer_name}.log"
-        
-        cd "\$SITE_PATH"
-        php -d memory_limit=\$php_memory_limit -d detect_unicode=0 bin/magento queue:consumers:start "\$consumer_name" --max-messages=\$max_messages --single-thread &
-        local pid=\$!
-        
-        # 监控内存使用
-        monitor_memory \$pid "\$consumer_name"
-        
-        # 等待进程结束
-        wait \$pid
-        local exit_code=\$?
-        
-        echo "\$(date): 消费者 \$consumer_name 退出，退出码: \$exit_code" >> "\$LOG_DIR/\${SITE_NAME}_\${consumer_name}.log"
-        
-        # 智能错误处理 - 根据退出码调整等待时间
-        case \$exit_code in
-            0) sleep 5 ;;  # 正常退出，短暂等待
-            1) sleep 30 ;; # 一般错误，中等等待
-            2) sleep 60 ;; # 严重错误，较长等待
-            *) sleep 120 ;; # 未知错误，最长等待
-        esac
-    done
-}
-
-# 启动主要消费者
-# 根据 CPU 核心数动态调整消费者数量和消息处理量
-local cpu_cores=\$(nproc)
-local consumer_multiplier=\$((cpu_cores * 2))  # 每核心2个消费者
-
-start_consumer "async.operations.all" \$((consumer_multiplier * 100)) &
-start_consumer "product_action_attribute.update" \$((consumer_multiplier * 50)) &
-start_consumer "exportProcessor" \$((consumer_multiplier * 30)) &
-start_consumer "inventoryQtyUpdate" \$((consumer_multiplier * 20)) &
-start_consumer "sales.rule.update" \$((consumer_multiplier * 15)) &
-start_consumer "media.storage.catalog.image.resize" \$((consumer_multiplier * 10)) &
-
-# 等待所有后台进程
-wait
-EOF
-
-    chmod +x "$CONSUMER_SCRIPT"
-    
-    # 启动消费者管理脚本
-    nohup "$CONSUMER_SCRIPT" >/dev/null 2>&1 &
-    CONSUMER_PID=$!
-    echo "$CONSUMER_PID" > "$PID_FILE"
-    
-    log_success "队列消费者启动完成 (PID: $CONSUMER_PID)"
+    echo -e "${YELLOW}📊 高级配置特性:${NC}"
+    echo -e "  管理方式: ${CYAN}systemd${NC} (企业级服务管理)"
+    echo -e "  消费者总数: ${CYAN}${#CONSUMERS[@]}个${NC} (全量 Magento2 消费者)"
+    echo -e "  消息处理量: ${CYAN}1000个/次${NC}"
+    echo -e "  运行模式: ${CYAN}双线程${NC} (CPUQuota=200%)"
+    echo -e "  内存限制: ${CYAN}2GB/服务${NC}"
+    echo -e "  权限修复: ${CYAN}超高性能模式${NC} (16并行+2000批处理)"
+    echo -e "  自动重启: ${CYAN}是${NC} (Restart=always)"
+    echo -e "  日志管理: ${CYAN}systemd journal${NC}"
 }
 
 # 启动消费者
 start_consumers() {
-    log_info "启动 $SITE_NAME 的队列消费者..."
+    log_info "启动 $SITE_NAME 的所有消费者服务..."
     
     if ! check_rabbitmq_service; then
         safe_exit 1
     fi
     
-    # 检查是否已经在运行
-    if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-        log_warning "消费者已经在运行 (PID: $(cat "$PID_FILE"))"
-        return 0
-    fi
+    local started_count=0
+    local failed_count=0
     
-    start_consumers_internal
+    for consumer in "${CONSUMERS[@]}"; do
+        if start_systemd_consumer "$consumer"; then
+            ((started_count++))
+        else
+            ((failed_count++))
+        fi
+    done
+    
+    echo
+    log_success "消费者服务启动完成: $started_count 成功, $failed_count 失败"
 }
 
 # 停止消费者
 stop_consumers() {
-    log_info "停止 $SITE_NAME 的队列消费者..."
+    log_info "停止 $SITE_NAME 的所有消费者服务..."
     
-    if [ -f "$PID_FILE" ]; then
-        PID=$(cat "$PID_FILE")
-        if kill -0 "$PID" 2>/dev/null; then
-            kill "$PID"
-            sleep 2
-            if kill -0 "$PID" 2>/dev/null; then
-                kill -9 "$PID"
-            fi
-            log_success "消费者已停止 (PID: $PID)"
+    local stopped_count=0
+    local failed_count=0
+    
+    for consumer in "${CONSUMERS[@]}"; do
+        if stop_systemd_consumer "$consumer"; then
+            ((stopped_count++))
         else
-            log_warning "消费者进程不存在"
+            ((failed_count++))
         fi
-        rm -f "$PID_FILE"
-    else
-        log_warning "PID 文件不存在"
-    fi
+    done
     
-    # 清理相关进程
-    pkill -f "queue:consumers:start.*$SITE_NAME" || true
+    echo
+    log_success "消费者服务停止完成: $stopped_count 成功, $failed_count 失败"
 }
 
 # 重启消费者
 restart_consumers() {
-    log_info "重启 $SITE_NAME 的队列消费者..."
+    log_info "重启 $SITE_NAME 的所有消费者服务..."
     stop_consumers
     sleep 3
     start_consumers
@@ -809,29 +781,36 @@ restart_consumers() {
 
 # 查看状态
 show_status() {
-    log_info "查看 $SITE_NAME 的消费者状态..."
+    log_info "查看 $SITE_NAME 的消费者服务状态..."
     
     echo
-    echo -e "${CYAN}=== 进程状态 ===${NC}"
-    if [ -f "$PID_FILE" ]; then
-        PID=$(cat "$PID_FILE")
-        if kill -0 "$PID" 2>/dev/null; then
-            echo -e "消费者进程: ${GREEN}运行中${NC} (PID: $PID)"
-            echo -e "内存使用: $(ps -o rss= -p "$PID" | tr -d ' ') KB"
+    echo -e "${CYAN}=== systemd 服务状态 ===${NC}"
+    
+    local active_count=0
+    local inactive_count=0
+    
+    for consumer in "${CONSUMERS[@]}"; do
+        local service_name="${SYSTEMD_SERVICE_PREFIX}-${SITE_NAME}-${consumer}"
+        local status=$(systemctl is-active "$service_name" 2>/dev/null || echo "inactive")
+        
+        if [ "$status" = "active" ]; then
+            echo -e "$service_name: ${GREEN}运行中${NC}"
+            ((active_count++))
         else
-            echo -e "消费者进程: ${RED}已停止${NC}"
+            echo -e "$service_name: ${RED}未运行${NC}"
+            ((inactive_count++))
         fi
-    else
-        echo -e "消费者进程: ${RED}未启动${NC}"
-    fi
+    done
+    
+    echo
+    echo -e "${CYAN}=== 服务统计 ===${NC}"
+    echo -e "运行中: ${GREEN}$active_count${NC}"
+    echo -e "未运行: ${RED}$inactive_count${NC}"
+    echo -e "总计: ${CYAN}${#CONSUMERS[@]}${NC}"
     
     echo
     echo -e "${CYAN}=== 队列状态 ===${NC}"
     safe_rabbitmq_cmd "list_queues -p '$VHOST_NAME' name consumers messages_ready messages_unacknowledged"
-    
-    echo
-    echo -e "${CYAN}=== 相关进程 ===${NC}"
-    ps aux | grep "queue:consumers:start.*$SITE_NAME" | grep -v grep || echo "无相关进程"
     
     echo
     echo -e "${CYAN}=== 配置信息 ===${NC}"
@@ -843,62 +822,46 @@ show_status() {
 
 # 查看日志
 show_logs() {
-    log_info "查看 $SITE_NAME 的消费者日志..."
-    
-    if [ ! -d "$LOG_DIR" ]; then
-        log_warning "日志目录不存在: $LOG_DIR"
-        return 1
-    fi
+    log_info "查看 $SITE_NAME 的消费者服务日志..."
     
     echo
-    echo -e "${CYAN}=== 内存监控日志 ===${NC}"
-    if [ -f "$LOG_DIR/${SITE_NAME}_memory.log" ]; then
-        tail -20 "$LOG_DIR/${SITE_NAME}_memory.log"
-    else
-        echo "无内存监控日志"
-    fi
+    echo -e "${CYAN}=== 最近的服务日志 ===${NC}"
     
-    echo
-    echo -e "${CYAN}=== 消费者日志 ===${NC}"
-    for log_file in "$LOG_DIR"/${SITE_NAME}_*.log; do
-        if [ -f "$log_file" ]; then
-            echo -e "\n${YELLOW}$(basename "$log_file"):${NC}"
-            tail -10 "$log_file"
-        fi
+    for consumer in "${CONSUMERS[@]}"; do
+        local service_name="${SYSTEMD_SERVICE_PREFIX}-${SITE_NAME}-${consumer}"
+        
+        echo -e "\n${YELLOW}$service_name:${NC}"
+        sudo journalctl -u "$service_name" --no-pager -n 10 --since "1 hour ago" 2>/dev/null || echo "无日志"
     done
 }
 
-# 监控内存
-monitor_memory() {
-    log_info "监控 $SITE_NAME 的消费者内存使用..."
-    
-    if [ ! -f "$PID_FILE" ]; then
-        log_error "消费者未启动"
-        return 1
-    fi
-    
-    PID=$(cat "$PID_FILE")
-    if ! kill -0 "$PID" 2>/dev/null; then
-        log_error "消费者进程不存在"
-        return 1
-    fi
+# 监控服务
+monitor_services() {
+    log_info "监控 $SITE_NAME 的消费者服务状态..."
     
     echo
-    echo -e "${CYAN}=== 内存监控 ===${NC}"
-    echo -e "PID: $PID"
+    echo -e "${CYAN}=== 服务监控 ===${NC}"
     echo -e "按 Ctrl+C 停止监控"
     echo
     
     while true; do
-        memory=$(ps -o rss= -p "$PID" 2>/dev/null | tr -d ' ')
-        if [ -n "$memory" ]; then
-            memory_mb=$((memory / 1024))
-            echo -e "$(date '+%H:%M:%S') - 内存使用: ${memory_mb}MB (${memory}KB)"
-        else
-            echo -e "$(date '+%H:%M:%S') - 进程已停止"
-            break
-        fi
-        sleep 5
+        local active_count=0
+        local inactive_count=0
+        
+        for consumer in "${CONSUMERS[@]}"; do
+            local service_name="${SYSTEMD_SERVICE_PREFIX}-${SITE_NAME}-${consumer}"
+            local status=$(systemctl is-active "$service_name" 2>/dev/null || echo "inactive")
+            
+            if [ "$status" = "active" ]; then
+                ((active_count++))
+            else
+                ((inactive_count++))
+            fi
+        done
+        
+        echo -e "$(date '+%H:%M:%S') - 运行中: ${GREEN}$active_count${NC}, 未运行: ${RED}$inactive_count${NC}, 总计: ${CYAN}${#CONSUMERS[@]}${NC}"
+        
+        sleep 10
     done
 }
 
@@ -911,8 +874,9 @@ clean_queues() {
     echo
     
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        safe_rabbitmq_cmd "purge_queue -p '$VHOST_NAME' async.operations.all"
-        safe_rabbitmq_cmd "purge_queue -p '$VHOST_NAME' product_action_attribute.update"
+        for consumer in "${CONSUMERS[@]}"; do
+            safe_rabbitmq_cmd "purge_queue -p '$VHOST_NAME' $consumer" || true
+        done
         log_success "队列已清理"
     else
         log_info "操作已取消"
@@ -921,15 +885,29 @@ clean_queues() {
 
 # 删除站点配置
 remove_site() {
-    log_info "删除 $SITE_NAME 的 RabbitMQ 配置..."
+    log_info "删除 $SITE_NAME 的 RabbitMQ 配置和服务..."
     
-    echo -e "${YELLOW}警告: 这将删除虚拟主机、用户和所有相关配置！${NC}"
+    echo -e "${YELLOW}警告: 这将删除虚拟主机、用户、所有相关配置和 systemd 服务！${NC}"
     read -p "确认继续? (y/N): " -n 1 -r
     echo
     
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        # 停止消费者
+        # 停止所有消费者服务
         stop_consumers
+        
+        # 删除 systemd 服务
+        log_info "删除 systemd 服务..."
+        for consumer in "${CONSUMERS[@]}"; do
+            local service_name="${SYSTEMD_SERVICE_PREFIX}-${SITE_NAME}-${consumer}"
+            local service_file="/etc/systemd/system/${service_name}.service"
+            
+            sudo systemctl disable "$service_name" 2>/dev/null || true
+            sudo systemctl stop "$service_name" 2>/dev/null || true
+            sudo rm -f "$service_file"
+        done
+        
+        # 重新加载 systemd
+        sudo systemctl daemon-reload
         
         # 删除虚拟主机
         if safe_rabbitmq_cmd "list_vhosts" | grep -q "^$VHOST_NAME$"; then
@@ -944,16 +922,9 @@ remove_site() {
         fi
         
         # 清理文件
-        rm -f "$PID_FILE"
-        rm -f "/tmp/rabbitmq_consumers_${SITE_NAME}.sh"
+        rm -f "$LOCK_FILE"
         
-        # 清理日志
-        if [ -d "$LOG_DIR" ]; then
-            rm -f "$LOG_DIR"/${SITE_NAME}_*.log
-            log_success "日志文件已清理"
-        fi
-        
-        log_success "站点配置已完全删除"
+        log_success "站点配置和服务已完全删除"
     else
         log_info "操作已取消"
     fi
