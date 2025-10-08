@@ -24,7 +24,8 @@ NGINX_GROUP="www-data"
 
 echo -e "${CYAN}=============================================="
 echo -e "    Magento2 部署脚本"
-echo -e "    自动处理权限问题"
+echo -e "    自动处理权限问题（高性能模式）"
+echo -e "    🚀 并行处理 + 批量操作"
 echo -e "==============================================${NC}"
 echo
 
@@ -119,36 +120,85 @@ php bin/magento indexer:reindex
 echo -e "${CHECK_MARK} 索引重建完成"
 echo
 
-# 7. 修复权限（确保所有新生成的文件权限正确）
-echo -e "${GEAR} ${CYAN}修复文件权限...${NC}"
+# 7. 修复权限（使用高性能并行方法）
+echo -e "${GEAR} ${CYAN}修复文件权限（高性能模式）...${NC}"
 
-# 设置 generated 目录权限（递归）
-if [[ -d "generated" ]]; then
-    sudo chown -R "${SITE_USER}:${NGINX_GROUP}" generated
-    sudo find generated -type d -exec chmod 775 {} \;
-    sudo find generated -type f -exec chmod 664 {} \;
-    echo -e "  ${CHECK_MARK} generated 目录权限已修复"
-fi
+# 性能配置
+MAX_PARALLEL_JOBS=8
+BATCH_SIZE=1000
 
-# 设置 var 目录权限
-sudo chown -R "${SITE_USER}:${NGINX_GROUP}" var
-sudo find var -type d -exec chmod 775 {} \;
-sudo find var -type f -exec chmod 664 {} \; 2>/dev/null || true
-echo -e "  ${CHECK_MARK} var 目录权限已修复"
+# 定义需要修复权限的目录
+PERMISSION_DIRS=("generated" "var" "pub/static" "pub/media")
 
-# 设置 pub/static 权限
-sudo chown -R "${SITE_USER}:${NGINX_GROUP}" pub/static
-sudo find pub/static -type d -exec chmod 775 {} \;
-sudo find pub/static -type f -exec chmod 664 {} \; 2>/dev/null || true
-echo -e "  ${CHECK_MARK} pub/static 目录权限已修复"
+# 统计文件数量
+total_files=0
+for dir in "${PERMISSION_DIRS[@]}"; do
+    if [[ -d "$dir" ]]; then
+        count=$(find "$dir" -type f 2>/dev/null | wc -l)
+        total_files=$((total_files + count))
+    fi
+done
 
-# 设置 pub/media 权限
-sudo chown -R "${SITE_USER}:${NGINX_GROUP}" pub/media
-sudo find pub/media -type d -exec chmod 775 {} \;
-sudo find pub/media -type f -exec chmod 664 {} \; 2>/dev/null || true
-echo -e "  ${CHECK_MARK} pub/media 目录权限已修复"
+echo -e "${INFO_MARK} 需要处理 $total_files 个文件"
 
-echo -e "${CHECK_MARK} 所有权限已修复"
+# 高性能权限修复函数
+fix_permissions_fast() {
+    local dir="$1"
+    local description="$2"
+    
+    if [[ ! -d "$dir" ]]; then
+        return 0
+    fi
+    
+    echo -e "  ${INFO_MARK} 处理 $description..."
+    
+    # 批量设置所有者（一次性处理整个目录）
+    sudo chown -R "${SITE_USER}:${NGINX_GROUP}" "$dir"
+    
+    # 并行设置目录权限
+    find "$dir" -type d -print0 | xargs -0 -n $BATCH_SIZE -P $MAX_PARALLEL_JOBS sudo chmod 775 2>/dev/null || true
+    
+    # 并行设置文件权限
+    find "$dir" -type f -print0 | xargs -0 -n $BATCH_SIZE -P $MAX_PARALLEL_JOBS sudo chmod 664 2>/dev/null || true
+    
+    # 并行设置 setgid 位（确保新文件继承组）
+    find "$dir" -type d -print0 | xargs -0 -n $BATCH_SIZE -P $MAX_PARALLEL_JOBS sudo chmod g+s 2>/dev/null || true
+    
+    echo -e "    ${CHECK_MARK} $description 权限已修复"
+}
+
+# 并行处理所有目录（真正的并行）
+echo -e "  ${INFO_MARK} 启动并行权限修复..."
+
+# 创建并行任务
+for dir in "${PERMISSION_DIRS[@]}"; do
+    case "$dir" in
+        "generated")
+            fix_permissions_fast "$dir" "generated 目录" &
+            ;;
+        "var")
+            fix_permissions_fast "$dir" "var 目录" &
+            ;;
+        "pub/static")
+            fix_permissions_fast "$dir" "pub/static 目录" &
+            ;;
+        "pub/media")
+            fix_permissions_fast "$dir" "pub/media 目录" &
+            ;;
+    esac
+done
+
+# 等待所有并行任务完成
+wait
+
+echo -e "${CHECK_MARK} 所有权限已修复（高性能模式）"
+
+# 显示性能统计
+echo -e "${INFO_MARK} ${CYAN}权限修复性能统计:${NC}"
+echo -e "  处理文件: $total_files 个"
+echo -e "  并行任务: $MAX_PARALLEL_JOBS 个"
+echo -e "  批处理大小: $BATCH_SIZE 个/批"
+echo -e "  优化方法: 并行处理 + 批量操作"
 echo
 
 # 8. 禁用维护模式
