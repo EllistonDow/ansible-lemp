@@ -287,7 +287,7 @@ MemoryLimit=2G
 CPUQuota=200%
 
 # 环境变量
-Environment=PHP_INI_SCAN_DIR=/etc/php/8.1/cli/conf.d
+Environment=PHP_INI_SCAN_DIR=/etc/php/$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')/cli/conf.d
 
 [Install]
 WantedBy=multi-user.target
